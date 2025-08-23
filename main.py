@@ -136,12 +136,25 @@ class GABAssetMind:
         self.portfolio_tree.bind("<Button-3>", self.show_context_menu)
     
     def setup_add_asset_tab(self):
-        # Scrollable frame
-        scrollable_frame = ctk.CTkScrollableFrame(self.add_asset_frame)
-        scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        # Frame principale senza scroll (tutto visibile in una schermata)
+        main_frame = ctk.CTkFrame(self.add_asset_frame)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Asset form
+        # Titolo
+        title_label = ctk.CTkLabel(main_frame, text="Nuovo Asset", 
+                                 font=ctk.CTkFont(size=18, weight="bold"))
+        title_label.pack(pady=10)
+        
+        # Asset form con layout 2 colonne
         self.form_vars = {}
+        
+        # Frame per il form con grid
+        form_frame = ctk.CTkFrame(main_frame)
+        form_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Configurazione grid per 2 colonne
+        form_frame.grid_columnconfigure(0, weight=1)
+        form_frame.grid_columnconfigure(1, weight=1)
         
         fields = [
             ("Categoria", "category", self.portfolio_manager.categories),
@@ -161,31 +174,42 @@ class GABAssetMind:
             ("Note", "note", None)
         ]
         
+        # Crea i campi in layout 2x2
         for i, (label, key, values) in enumerate(fields):
-            frame = ctk.CTkFrame(scrollable_frame)
-            frame.pack(fill="x", pady=5)
+            row = i // 2  # Riga (0, 1, 2, ...)
+            col = i % 2   # Colonna (0 o 1)
             
-            ctk.CTkLabel(frame, text=label, width=200).pack(side="left", padx=10, pady=5)
+            # Frame per ogni campo
+            field_frame = ctk.CTkFrame(form_frame)
+            field_frame.grid(row=row, column=col, padx=10, pady=5, sticky="ew")
             
-            if values:
+            # Label
+            label_widget = ctk.CTkLabel(field_frame, text=label, width=150)
+            label_widget.pack(side="left", padx=10, pady=8)
+            
+            # Widget di input
+            if values:  # ComboBox per campi con valori predefiniti
                 var = ctk.StringVar()
-                widget = ctk.CTkComboBox(frame, values=values, variable=var)
-            else:
+                widget = ctk.CTkComboBox(field_frame, values=values, variable=var, width=180)
+            else:  # Entry per campi liberi
                 var = ctk.StringVar()
-                widget = ctk.CTkEntry(frame, textvariable=var, width=300)
+                widget = ctk.CTkEntry(field_frame, textvariable=var, width=180)
             
-            widget.pack(side="right", padx=10, pady=5)
+            widget.pack(side="right", padx=10, pady=8)
             self.form_vars[key] = var
         
-        # Buttons
-        button_frame = ctk.CTkFrame(scrollable_frame)
-        button_frame.pack(fill="x", pady=20)
+        # Frame per i pulsanti (in fondo)
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(fill="x", padx=10, pady=15)
         
-        save_btn = ctk.CTkButton(button_frame, text="Salva Asset", command=self.save_asset)
-        save_btn.pack(side="left", padx=10)
+        # Pulsanti centrati
+        save_btn = ctk.CTkButton(button_frame, text="💾 Salva Asset", 
+                               command=self.save_asset, width=150, height=40)
+        save_btn.pack(side="left", padx=20)
         
-        clear_btn = ctk.CTkButton(button_frame, text="Pulisci Form", command=self.clear_form)
-        clear_btn.pack(side="right", padx=10)
+        clear_btn = ctk.CTkButton(button_frame, text="🗑️ Pulisci Form", 
+                                command=self.clear_form, width=150, height=40)
+        clear_btn.pack(side="right", padx=20)
     
     def setup_analytics_tab(self):
         # Control frame
