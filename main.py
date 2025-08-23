@@ -20,7 +20,9 @@ class GABAssetMind:
         self.portfolio_manager = PortfolioManager()
         
         self.setup_ui()
-        self.load_portfolio_data()
+        
+        # Caricamento iniziale dei dati dopo aver creato l'interfaccia
+        self.root.after(100, self.load_portfolio_data)  # Carica dopo 100ms
     
     def setup_ui(self):
         # Main container
@@ -140,17 +142,34 @@ class GABAssetMind:
         main_frame = ctk.CTkFrame(self.add_asset_frame)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Titolo
-        title_label = ctk.CTkLabel(main_frame, text="Nuovo Asset", 
+        # Header con titolo e pulsanti sulla stessa riga
+        header_frame = ctk.CTkFrame(main_frame)
+        header_frame.pack(fill="x", padx=10, pady=10)
+        
+        # Titolo a sinistra
+        title_label = ctk.CTkLabel(header_frame, text="Nuovo Asset", 
                                  font=ctk.CTkFont(size=18, weight="bold"))
-        title_label.pack(pady=10)
+        title_label.pack(side="left", padx=20, pady=10)
+        
+        # Pulsanti a destra
+        save_btn = ctk.CTkButton(header_frame, text="💾 SALVA", 
+                               command=self.test_save_asset, width=120, height=40,
+                               font=ctk.CTkFont(size=14, weight="bold"),
+                               fg_color="green", hover_color="darkgreen")
+        save_btn.pack(side="right", padx=10)
+        
+        clear_btn = ctk.CTkButton(header_frame, text="🗑️ PULISCI", 
+                                command=self.clear_form, width=120, height=40,
+                                font=ctk.CTkFont(size=14, weight="bold"),
+                                fg_color="orange", hover_color="darkorange")
+        clear_btn.pack(side="right", padx=10)
         
         # Asset form con layout 2 colonne
         self.form_vars = {}
         
-        # Frame per il form con grid
+        # Frame per il form con grid (non expand per lasciare spazio ai pulsanti)
         form_frame = ctk.CTkFrame(main_frame)
-        form_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        form_frame.pack(fill="x", padx=10, pady=10)
         
         # Configurazione grid per 2 colonne
         form_frame.grid_columnconfigure(0, weight=1)
@@ -202,18 +221,18 @@ class GABAssetMind:
             widget.pack(side="right", padx=10, pady=8)
             self.form_vars[key] = var
         
-        # Frame per i pulsanti (in fondo)
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(fill="x", padx=10, pady=15)
+    
+    def test_save_asset(self):
+        """Funzione di test per verificare se il pulsante funziona"""
+        print("🔥 PULSANTE SALVA CLICCATO!")
         
-        # Pulsanti centrati
-        save_btn = ctk.CTkButton(button_frame, text="💾 Salva Asset", 
-                               command=self.save_asset, width=150, height=40)
-        save_btn.pack(side="left", padx=20)
+        # Debug dei valori nei form
+        print("=== VALORI FORM ===")
+        for key, var in self.form_vars.items():
+            value = var.get()
+            print(f"{key}: '{value}'")
         
-        clear_btn = ctk.CTkButton(button_frame, text="🗑️ Pulisci Form", 
-                                command=self.clear_form, width=150, height=40)
-        clear_btn.pack(side="right", padx=20)
+        self.save_asset()
     
     def setup_analytics_tab(self):
         # Control frame
@@ -254,6 +273,12 @@ class GABAssetMind:
     
     def load_portfolio_data(self):
         df = self.portfolio_manager.load_data()
+        print(f"DEBUG load_portfolio_data: Caricamento {len(df)} righe dal file Excel")
+        
+        if df.empty:
+            print("DEBUG: File Excel vuoto, nessun dato da caricare")
+            self.update_summary()
+            return
         
         # Clear existing data
         for item in self.portfolio_tree.get_children():
@@ -296,6 +321,7 @@ class GABAssetMind:
         
         # Update summary
         self.update_summary()
+        print(f"DEBUG: Portfolio caricato con successo - {len(df)} asset visualizzati")
     
     def update_summary(self):
         summary = self.portfolio_manager.get_portfolio_summary()
@@ -349,8 +375,11 @@ class GABAssetMind:
             ))
     
     def save_asset(self):
+        print("DEBUG: save_asset chiamata!")  # Debug
         try:
             asset_data = {}
+            print(f"DEBUG: form_vars keys: {list(self.form_vars.keys())}")  # Debug
+            
             for key, var in self.form_vars.items():
                 value = var.get().strip()
                 
@@ -386,13 +415,42 @@ class GABAssetMind:
             else:
                 asset_data['updatedTotalValue'] = asset_data.get('createdTotalValue', 0.0)
             
-            asset = Asset(**asset_data)
+            # Mappa i nomi dei campi da camelCase a snake_case
+            mapped_data = {
+                'asset_id': None,  # Sarà assegnato automaticamente
+                'category': asset_data.get('category', ''),
+                'asset_name': asset_data.get('assetName', ''),
+                'position': asset_data.get('position', ''),  # Ora è text
+                'risk_level': asset_data.get('riskLevel', 1),
+                'ticker': asset_data.get('ticker', ''),
+                'isin': asset_data.get('isin', ''),
+                'created_at': asset_data.get('createdAt', ''),
+                'created_amount': asset_data.get('createdAmount', 0.0),
+                'created_unit_price': asset_data.get('createdUnitPrice', 0.0),
+                'created_total_value': asset_data.get('createdTotalValue', 0.0),
+                'updated_at': asset_data.get('updatedAt', ''),
+                'updated_amount': asset_data.get('updatedAmount', 0.0),
+                'updated_unit_price': asset_data.get('updatedUnitPrice', 0.0),
+                'updated_total_value': asset_data.get('updatedTotalValue', 0.0),
+                'accumulation_plan': asset_data.get('accumulationPlan', ''),
+                'accumulation_amount': asset_data.get('accumulationAmount', 0.0),
+                'income_per_year': asset_data.get('incomePerYear', 0.0),
+                'rental_income': asset_data.get('rentalIncome', 0.0),
+                'note': asset_data.get('note', '')
+            }
+            
+            print(f"DEBUG: mapped_data = {mapped_data}")  # Debug
+            asset = Asset(**mapped_data)
+            
+            print(f"DEBUG: asset_data creato: {asset_data}")  # Debug
             
             if self.portfolio_manager.add_asset(asset):
+                print("DEBUG: Asset salvato con successo!")  # Debug
                 messagebox.showinfo("Successo", "Asset aggiunto con successo!")
                 self.clear_form()
                 self.load_portfolio_data()
             else:
+                print("DEBUG: Errore nel salvataggio!")  # Debug
                 messagebox.showerror("Errore", "Errore nel salvataggio dell'asset")
                 
         except ValueError as e:

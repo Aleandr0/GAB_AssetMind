@@ -93,18 +93,26 @@ class PortfolioManager:
             return False
     
     def add_asset(self, asset: Asset) -> bool:
+        print(f"DEBUG models.py: add_asset chiamato con asset: {asset.asset_name}")
         df = self.load_data()
+        print(f"DEBUG models.py: df caricato, righe: {len(df)}")
         
         if asset.id is None:
             asset.id = len(df) + 1 if not df.empty else 1
+            print(f"DEBUG models.py: nuovo ID assegnato: {asset.id}")
         
         if asset.created_at == "":
             asset.created_at = datetime.now().strftime("%Y-%m-%d")
+            print(f"DEBUG models.py: data creazione: {asset.created_at}")
         
         new_row = pd.DataFrame([asset.to_dict()])
+        print(f"DEBUG models.py: nuova riga creata: {new_row}")
         df = pd.concat([df, new_row], ignore_index=True)
+        print(f"DEBUG models.py: df dopo concat, righe: {len(df)}")
         
-        return self.save_data(df)
+        result = self.save_data(df)
+        print(f"DEBUG models.py: salvataggio risultato: {result}")
+        return result
     
     def update_asset(self, asset_id: int, updated_data: Dict[str, Any]) -> bool:
         df = self.load_data()
