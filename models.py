@@ -1,11 +1,46 @@
+#!/usr/bin/env python3
+"""
+Modelli dati per GAB AssetMind
+Gestisce la persistenza dei dati portfolio in formato Excel
+
+Classi principali:
+- Asset: Rappresenta un singolo asset del portfolio
+- PortfolioManager: Gestisce il database Excel e le operazioni CRUD
+"""
+
 import pandas as pd
 import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 class Asset:
+    """
+    Rappresenta un singolo asset del portfolio
+    
+    Supporta tutti i tipi di asset: ETF, Azioni, Obbligazioni, Buoni del Tesoro,
+    PAC, Criptovalute, Liquidità, Immobiliare, Oggetti
+    
+    Attributi:
+        asset_id: ID univoco dell'asset
+        category: Categoria (ETF, Azioni, etc.)
+        asset_name: Nome dell'asset
+        position: Posizione/descrizione (testo libero)
+        risk_level: Livello di rischio 1-5
+        ticker: Codice ticker di borsa
+        isin: Codice ISIN
+        created_at/updated_at: Date di creazione/aggiornamento
+        created_amount/updated_amount: Quantità iniziale/attuale
+        created_unit_price/updated_unit_price: Prezzo unitario iniziale/attuale
+        created_total_value/updated_total_value: Valore totale iniziale/attuale
+        accumulation_plan: Descrizione piano di accumulo
+        accumulation_amount: Importo accumulo mensile
+        income_per_year: Reddito annuale da investimento
+        rental_income: Reddito annuale da affitto
+        note: Note libere
+    """
+    
     def __init__(self, asset_id: int = None, category: str = "", asset_name: str = "", 
-                 position: float = 0.0, risk_level: int = 1, ticker: str = "", 
+                 position: str = "", risk_level: int = 1, ticker: str = "", 
                  isin: str = "", created_at: str = "", created_amount: float = 0.0, 
                  created_unit_price: float = 0.0, created_total_value: float = 0.0,
                  updated_at: str = "", updated_amount: float = 0.0, 
@@ -58,7 +93,24 @@ class Asset:
         }
 
 class PortfolioManager:
+    """
+    Gestisce il portfolio e la persistenza dei dati in Excel
+    
+    Fornisce operazioni CRUD (Create, Read, Update, Delete) per gli asset
+    e calcoli di sommario per il portfolio.
+    
+    Attributes:
+        excel_file: Nome del file Excel per la persistenza
+        categories: Lista delle categorie di asset supportate
+    """
+    
     def __init__(self, excel_file: str = "portfolio_data.xlsx"):
+        """
+        Inizializza il gestore del portfolio
+        
+        Args:
+            excel_file: Nome del file Excel da usare (default: portfolio_data.xlsx)
+        """
         self.excel_file = excel_file
         self.categories = [
             "ETF", "Azioni", "Obbligazioni", "Buoni del Tesoro", 
@@ -93,26 +145,30 @@ class PortfolioManager:
             return False
     
     def add_asset(self, asset: Asset) -> bool:
-        print(f"DEBUG models.py: add_asset chiamato con asset: {asset.asset_name}")
-        df = self.load_data()
-        print(f"DEBUG models.py: df caricato, righe: {len(df)}")
+        """
+        Aggiunge un nuovo asset al portfolio
         
+        Args:
+            asset: Oggetto Asset da aggiungere
+            
+        Returns:
+            True se il salvataggio è riuscito, False altrimenti
+        """
+        df = self.load_data()
+        
+        # Assegna ID automatico se non specificato
         if asset.id is None:
             asset.id = len(df) + 1 if not df.empty else 1
-            print(f"DEBUG models.py: nuovo ID assegnato: {asset.id}")
         
+        # Assegna data corrente se non specificata
         if asset.created_at == "":
             asset.created_at = datetime.now().strftime("%Y-%m-%d")
-            print(f"DEBUG models.py: data creazione: {asset.created_at}")
         
+        # Aggiunge l'asset al DataFrame
         new_row = pd.DataFrame([asset.to_dict()])
-        print(f"DEBUG models.py: nuova riga creata: {new_row}")
         df = pd.concat([df, new_row], ignore_index=True)
-        print(f"DEBUG models.py: df dopo concat, righe: {len(df)}")
         
-        result = self.save_data(df)
-        print(f"DEBUG models.py: salvataggio risultato: {result}")
-        return result
+        return self.save_data(df)
     
     def update_asset(self, asset_id: int, updated_data: Dict[str, Any]) -> bool:
         df = self.load_data()

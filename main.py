@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+"""
+GAB AssetMind - Portfolio Manager
+Applicazione GUI per la gestione di portafogli diversificati con database Excel
+
+Autori: Alessandro + Claude Code
+Repository: https://github.com/Aleandr0/GAB_AssetMind
+"""
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -8,21 +17,40 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from models import Asset, PortfolioManager
 import os
 
-ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("blue")
+# Configurazione tema dell'applicazione
+ctk.set_appearance_mode("light")  # Modalità chiara
+ctk.set_default_color_theme("blue")  # Tema blu
 
 class GABAssetMind:
+    """
+    Applicazione principale GAB AssetMind per la gestione portfolio
+    
+    Gestisce 9 tipi di asset: ETF, Azioni, Obbligazioni, Buoni del Tesoro, 
+    PAC, Criptovalute, Liquidità, Immobiliare, Oggetti
+    
+    Funzionalità principali:
+    - Form di input per nuovi asset (20 campi)
+    - Visualizzazione portfolio in tabella
+    - Grafici di analisi
+    - Export CSV/PDF
+    - Persistenza dati in Excel
+    """
+    
     def __init__(self):
+        """Inizializza l'applicazione e configura l'interfaccia"""
+        # Finestra principale
         self.root = ctk.CTk()
         self.root.title("GAB AssetMind - Portfolio Manager")
         self.root.geometry("1200x800")
         
+        # Gestore del portfolio (interfaccia con Excel)
         self.portfolio_manager = PortfolioManager()
         
+        # Creazione interfaccia utente
         self.setup_ui()
         
-        # Caricamento iniziale dei dati dopo aver creato l'interfaccia
-        self.root.after(100, self.load_portfolio_data)  # Carica dopo 100ms
+        # Caricamento automatico dei dati esistenti
+        self.root.after(100, self.load_portfolio_data)
     
     def setup_ui(self):
         # Main container
@@ -153,7 +181,7 @@ class GABAssetMind:
         
         # Pulsanti a destra
         save_btn = ctk.CTkButton(header_frame, text="💾 SALVA", 
-                               command=self.test_save_asset, width=120, height=40,
+                               command=self.save_new_asset, width=120, height=40,
                                font=ctk.CTkFont(size=14, weight="bold"),
                                fg_color="green", hover_color="darkgreen")
         save_btn.pack(side="right", padx=10)
@@ -222,16 +250,8 @@ class GABAssetMind:
             self.form_vars[key] = var
         
     
-    def test_save_asset(self):
-        """Funzione di test per verificare se il pulsante funziona"""
-        print("🔥 PULSANTE SALVA CLICCATO!")
-        
-        # Debug dei valori nei form
-        print("=== VALORI FORM ===")
-        for key, var in self.form_vars.items():
-            value = var.get()
-            print(f"{key}: '{value}'")
-        
+    def save_new_asset(self):
+        """Salva un nuovo asset dal form di input"""
         self.save_asset()
     
     def setup_analytics_tab(self):
@@ -272,11 +292,10 @@ class GABAssetMind:
         backup_btn.pack(pady=10)
     
     def load_portfolio_data(self):
+        """Carica i dati del portfolio dal file Excel e aggiorna la visualizzazione"""
         df = self.portfolio_manager.load_data()
-        print(f"DEBUG load_portfolio_data: Caricamento {len(df)} righe dal file Excel")
         
         if df.empty:
-            print("DEBUG: File Excel vuoto, nessun dato da caricare")
             self.update_summary()
             return
         
@@ -319,9 +338,8 @@ class GABAssetMind:
                 str(row['note'])[:15] + "..." if pd.notna(row['note']) and len(str(row['note'])) > 15 else (str(row['note']) if pd.notna(row['note']) else "-")  # Note
             ))
         
-        # Update summary
+        # Aggiorna il sommario con i totali
         self.update_summary()
-        print(f"DEBUG: Portfolio caricato con successo - {len(df)} asset visualizzati")
     
     def update_summary(self):
         summary = self.portfolio_manager.get_portfolio_summary()
@@ -375,11 +393,11 @@ class GABAssetMind:
             ))
     
     def save_asset(self):
-        print("DEBUG: save_asset chiamata!")  # Debug
+        """Salva un asset dal form nella base dati Excel"""
         try:
             asset_data = {}
-            print(f"DEBUG: form_vars keys: {list(self.form_vars.keys())}")  # Debug
             
+            # Estrae e valida i dati dal form
             for key, var in self.form_vars.items():
                 value = var.get().strip()
                 
@@ -397,14 +415,14 @@ class GABAssetMind:
                 else:
                     asset_data[key] = value if value else ""
             
-            # Gestione automatica delle date se vuote
+            # Gestisce date automatiche se non inserite
             from datetime import datetime
             if not asset_data.get('createdAt'):
                 asset_data['createdAt'] = datetime.now().strftime("%Y-%m-%d")
             if not asset_data.get('updatedAt'):
                 asset_data['updatedAt'] = datetime.now().strftime("%Y-%m-%d")
             
-            # Calcola valori totali automaticamente (sovrascrive input utente)
+            # Calcola automaticamente i valori totali
             if asset_data.get('createdAmount') and asset_data.get('createdUnitPrice'):
                 asset_data['createdTotalValue'] = asset_data['createdAmount'] * asset_data['createdUnitPrice']
             else:
@@ -439,18 +457,15 @@ class GABAssetMind:
                 'note': asset_data.get('note', '')
             }
             
-            print(f"DEBUG: mapped_data = {mapped_data}")  # Debug
+            # Crea l'oggetto Asset con i dati mappati
             asset = Asset(**mapped_data)
             
-            print(f"DEBUG: asset_data creato: {asset_data}")  # Debug
-            
+            # Salva l'asset nel database Excel
             if self.portfolio_manager.add_asset(asset):
-                print("DEBUG: Asset salvato con successo!")  # Debug
                 messagebox.showinfo("Successo", "Asset aggiunto con successo!")
                 self.clear_form()
                 self.load_portfolio_data()
             else:
-                print("DEBUG: Errore nel salvataggio!")  # Debug
                 messagebox.showerror("Errore", "Errore nel salvataggio dell'asset")
                 
         except ValueError as e:
