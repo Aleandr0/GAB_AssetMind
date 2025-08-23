@@ -163,10 +163,14 @@ class GABAssetMind:
             ("Livello Rischio (1-5)", "riskLevel", ["1", "2", "3", "4", "5"]),
             ("Ticker", "ticker", None),
             ("ISIN", "isin", None),
+            ("Data Creazione (YYYY-MM-DD)", "createdAt", None),
             ("Quantità Iniziale", "createdAmount", None),
             ("Prezzo Unitario Iniziale", "createdUnitPrice", None),
+            ("Valore Totale Iniziale (auto)", "createdTotalValue", None),
+            ("Data Aggiornamento (YYYY-MM-DD)", "updatedAt", None),
             ("Quantità Attuale", "updatedAmount", None),
             ("Prezzo Unitario Attuale", "updatedUnitPrice", None),
+            ("Valore Totale Attuale (auto)", "updatedTotalValue", None),
             ("Piano Accumulo", "accumulationPlan", None),
             ("Importo Accumulo Mensile", "accumulationAmount", None),
             ("Reddito Annuale", "incomePerYear", None),
@@ -364,12 +368,23 @@ class GABAssetMind:
                 else:
                     asset_data[key] = value if value else ""
             
-            # Calculate total values
-            if asset_data['createdAmount'] and asset_data['createdUnitPrice']:
-                asset_data['createdTotalValue'] = asset_data['createdAmount'] * asset_data['createdUnitPrice']
+            # Gestione automatica delle date se vuote
+            from datetime import datetime
+            if not asset_data.get('createdAt'):
+                asset_data['createdAt'] = datetime.now().strftime("%Y-%m-%d")
+            if not asset_data.get('updatedAt'):
+                asset_data['updatedAt'] = datetime.now().strftime("%Y-%m-%d")
             
-            if asset_data['updatedAmount'] and asset_data['updatedUnitPrice']:
+            # Calcola valori totali automaticamente (sovrascrive input utente)
+            if asset_data.get('createdAmount') and asset_data.get('createdUnitPrice'):
+                asset_data['createdTotalValue'] = asset_data['createdAmount'] * asset_data['createdUnitPrice']
+            else:
+                asset_data['createdTotalValue'] = 0.0
+            
+            if asset_data.get('updatedAmount') and asset_data.get('updatedUnitPrice'):
                 asset_data['updatedTotalValue'] = asset_data['updatedAmount'] * asset_data['updatedUnitPrice']
+            else:
+                asset_data['updatedTotalValue'] = asset_data.get('createdTotalValue', 0.0)
             
             asset = Asset(**asset_data)
             
