@@ -70,25 +70,25 @@ class Asset:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'Id': self.id,
+            'id': self.id,
             'category': self.category,
-            'assetName': self.asset_name,
+            'asset_name': self.asset_name,
             'position': self.position,
             'riskLevel': self.risk_level,
             'ticker': self.ticker,
             'isin': self.isin,
             'createdAt': self.created_at,
             'createdAmount': self.created_amount,
-            'createdUnitPrice': self.created_unit_price,
-            'createdTotalValue': self.created_total_value,
+            'created_unit_price': self.created_unit_price,
+            'created_total_value': self.created_total_value,
             'updatedAt': self.updated_at,
             'updatedAmount': self.updated_amount,
-            'updatedUnitPrice': self.updated_unit_price,
-            'updatedTotalValue': self.updated_total_value,
-            'accumulationPlan': self.accumulation_plan,
-            'accumulationAmount': self.accumulation_amount,
-            'incomePerYear': self.income_per_year,
-            'rentalIncome': self.rental_income,
+            'updated_unit_price': self.updated_unit_price,
+            'updated_total_value': self.updated_total_value,
+            'accumulation_plan': self.accumulation_plan,
+            'accumulation_amount': self.accumulation_amount,
+            'income_per_year': self.income_per_year,
+            'rental_income': self.rental_income,
             'note': self.note
         }
 
@@ -121,28 +121,144 @@ class PortfolioManager:
     def _initialize_excel(self):
         if not os.path.exists(self.excel_file):
             columns = [
-                'Id', 'category', 'assetName', 'position', 'riskLevel', 'ticker', 'isin',
+                'id', 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
                 'createdAt', 'createdAmount', 'createdUnitPrice', 'createdTotalValue',
                 'updatedAt', 'updatedAmount', 'updatedUnitPrice', 'updatedTotalValue',
-                'accumulationPlan', 'accumulationAmount', 'incomePerYear', 'rentalIncome', 'note'
+                'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
             ]
             df = pd.DataFrame(columns=columns)
             df.to_excel(self.excel_file, index=False)
     
     def load_data(self) -> pd.DataFrame:
         try:
-            return pd.read_excel(self.excel_file)
+            df = pd.read_excel(self.excel_file)
+            
+            # Formatta le date per rimuovere l'ora durante il caricamento
+            date_columns = ['created_at', 'updated_at']
+            for col in date_columns:
+                if col in df.columns:
+                    df[col] = df[col].apply(self._clean_date_from_excel)
+            
+            return df
         except Exception as e:
             print(f"Errore nel caricamento dati: {e}")
             return pd.DataFrame()
     
+    def _clean_date_from_excel(self, date_value):
+        """Pulisce le date caricate da Excel rimuovendo l'ora"""
+        if pd.isna(date_value) or date_value == "":
+            return date_value
+            
+        try:
+            # Se è un Timestamp pandas, convertilo solo alla data
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.strftime("%Y-%m-%d")
+            
+            # Se è già una stringa, rimuovi eventuale ora
+            date_str = str(date_value)
+            if " " in date_str:
+                return date_str.split()[0]
+            
+            return date_str
+            
+        except (ValueError, TypeError):
+            return date_value
+    
     def save_data(self, df: pd.DataFrame):
         try:
-            df.to_excel(self.excel_file, index=False)
+            # Salva usando openpyxl per supportare le formule Excel
+            self.save_data_with_formulas(df)
             return True
         except Exception as e:
             print(f"Errore nel salvataggio dati: {e}")
             return False
+    
+    def save_data_with_formulas(self, df: pd.DataFrame):
+        """Salva i dati con formule Excel per i calcoli automatici"""
+        from openpyxl import Workbook
+        from openpyxl.utils.dataframe import dataframe_to_rows
+        from datetime import datetime
+        
+        # Crea copia del DataFrame e formatta le date come solo giorno
+        df_clean = df.copy()
+        
+        # Converte le colonne date per rimuovere l'ora
+        date_columns = ['created_at', 'updated_at']
+        for col in date_columns:
+            if col in df_clean.columns:
+                df_clean[col] = df_clean[col].apply(self._format_date_for_excel)
+        
+        # Crea workbook
+        wb = Workbook()
+        ws = wb.active
+        
+        # Inserisce i dati dal DataFrame pulito
+        for r in dataframe_to_rows(df_clean, index=False, header=True):
+            ws.append(r)
+    
+    def _format_date_for_excel(self, date_value):
+        """Formatta le date per Excel (solo giorno, no ora)"""
+        if pd.isna(date_value) or date_value == "" or date_value is None:
+            return None
+            
+        try:
+            from datetime import datetime
+            
+            # Se è già una stringa in formato YYYY-MM-DD, mantienila
+            date_str = str(date_value)
+            if "-" in date_str and len(date_str.split()[0]) == 10:
+                return date_str.split()[0]  # Rimuove eventuale ora
+            
+            # Se è un timestamp pandas, convertilo
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.strftime("%Y-%m-%d")
+            
+            # Prova parsing generale
+            parsed_date = pd.to_datetime(date_value)
+            return parsed_date.strftime("%Y-%m-%d")
+            
+        except (ValueError, TypeError):
+            return str(date_value).split()[0] if " " in str(date_value) else str(date_value)
+        
+        # Trova le colonne dei valori totali
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        header_list = list(header_row)
+        
+        try:
+            created_amount_idx = header_list.index('created_amount')
+            created_price_idx = header_list.index('created_unit_price')
+            created_total_idx = header_list.index('created_total_value')
+            
+            updated_amount_idx = header_list.index('updated_amount')
+            updated_price_idx = header_list.index('updated_unit_price')
+            updated_total_idx = header_list.index('updated_total_value')
+            
+            # Converti gli indici in lettere di colonna
+            from openpyxl.utils import get_column_letter
+            
+            created_amount_col = get_column_letter(created_amount_idx + 1)
+            created_price_col = get_column_letter(created_price_idx + 1)
+            created_total_col = get_column_letter(created_total_idx + 1)
+            
+            updated_amount_col = get_column_letter(updated_amount_idx + 1)
+            updated_price_col = get_column_letter(updated_price_idx + 1)
+            updated_total_col = get_column_letter(updated_total_idx + 1)
+            
+            # Applica le formule a tutte le righe (dalla riga 2 in poi)
+            for row in range(2, ws.max_row + 1):
+                # Formula per Valore Totale Iniziale = Quantità * Prezzo Unitario
+                formula1 = f'={created_amount_col}{row}*{created_price_col}{row}'
+                ws[f'{created_total_col}{row}'] = formula1
+                
+                # Formula per Valore Totale Attuale = Quantità * Prezzo Unitario
+                formula2 = f'={updated_amount_col}{row}*{updated_price_col}{row}'
+                ws[f'{updated_total_col}{row}'] = formula2
+                
+        except (ValueError, IndexError) as e:
+            print(f"Errore nell'applicazione delle formule: {e}")
+        
+        # Salva il file
+        wb.save(self.excel_file)
     
     def add_asset(self, asset: Asset) -> bool:
         """
@@ -173,52 +289,52 @@ class PortfolioManager:
     def update_asset(self, asset_id: int, updated_data: Dict[str, Any]) -> bool:
         df = self.load_data()
         
-        if asset_id not in df['Id'].values:
+        if asset_id not in df['id'].values:
             return False
         
-        updated_data['updatedAt'] = datetime.now().strftime("%Y-%m-%d")
+        # Non forzare la data di aggiornamento - viene gestita dal chiamante
         
         for key, value in updated_data.items():
-            df.loc[df['Id'] == asset_id, key] = value
+            df.loc[df['id'] == asset_id, key] = value
         
         return self.save_data(df)
     
     def delete_asset(self, asset_id: int) -> bool:
         df = self.load_data()
         
-        if asset_id not in df['Id'].values:
+        if asset_id not in df['id'].values:
             return False
         
-        df = df[df['Id'] != asset_id]
+        df = df[df['id'] != asset_id]
         return self.save_data(df)
     
     def get_asset(self, asset_id: int) -> Optional[Asset]:
         df = self.load_data()
         
-        if asset_id not in df['Id'].values:
+        if asset_id not in df['id'].values:
             return None
         
-        row = df[df['Id'] == asset_id].iloc[0]
+        row = df[df['id'] == asset_id].iloc[0]
         return Asset(
-            asset_id=row['Id'],
+            asset_id=row['id'],
             category=row['category'],
-            asset_name=row['assetName'],
+            asset_name=row['asset_name'],
             position=row['position'],
-            risk_level=row['riskLevel'],
+            risk_level=row['risk_level'],
             ticker=row['ticker'],
             isin=row['isin'],
-            created_at=row['createdAt'],
-            created_amount=row['createdAmount'],
-            created_unit_price=row['createdUnitPrice'],
-            created_total_value=row['createdTotalValue'],
-            updated_at=row['updatedAt'],
-            updated_amount=row['updatedAmount'],
-            updated_unit_price=row['updatedUnitPrice'],
-            updated_total_value=row['updatedTotalValue'],
-            accumulation_plan=row['accumulationPlan'],
-            accumulation_amount=row['accumulationAmount'],
-            income_per_year=row['incomePerYear'],
-            rental_income=row['rentalIncome'],
+            created_at=row['created_at'],
+            created_amount=row['created_amount'],
+            created_unit_price=row['created_unit_price'],
+            created_total_value=row['created_total_value'],
+            updated_at=row['updated_at'],
+            updated_amount=row['updated_amount'],
+            updated_unit_price=row['updated_unit_price'],
+            updated_total_value=row['updated_total_value'],
+            accumulation_plan=row['accumulation_plan'],
+            accumulation_amount=row['accumulation_amount'],
+            income_per_year=row['income_per_year'],
+            rental_income=row['rental_income'],
             note=row['note']
         )
     
@@ -229,25 +345,25 @@ class PortfolioManager:
         assets = []
         for _, row in filtered_df.iterrows():
             assets.append(Asset(
-                asset_id=row['Id'],
+                asset_id=row['id'],
                 category=row['category'],
-                asset_name=row['assetName'],
+                asset_name=row['asset_name'],
                 position=row['position'],
-                risk_level=row['riskLevel'],
+                risk_level=row['risk_level'],
                 ticker=row['ticker'],
                 isin=row['isin'],
-                created_at=row['createdAt'],
-                created_amount=row['createdAmount'],
-                created_unit_price=row['createdUnitPrice'],
-                created_total_value=row['createdTotalValue'],
-                updated_at=row['updatedAt'],
-                updated_amount=row['updatedAmount'],
-                updated_unit_price=row['updatedUnitPrice'],
-                updated_total_value=row['updatedTotalValue'],
-                accumulation_plan=row['accumulationPlan'],
-                accumulation_amount=row['accumulationAmount'],
-                income_per_year=row['incomePerYear'],
-                rental_income=row['rentalIncome'],
+                created_at=row['created_at'],
+                created_amount=row['created_amount'],
+                created_unit_price=row['created_unit_price'],
+                created_total_value=row['created_total_value'],
+                updated_at=row['updated_at'],
+                updated_amount=row['updated_amount'],
+                updated_unit_price=row['updated_unit_price'],
+                updated_total_value=row['updated_total_value'],
+                accumulation_plan=row['accumulation_plan'],
+                accumulation_amount=row['accumulation_amount'],
+                income_per_year=row['income_per_year'],
+                rental_income=row['rental_income'],
                 note=row['note']
             ))
         
@@ -265,11 +381,29 @@ class PortfolioManager:
                 'monthly_accumulation': 0
             }
         
-        total_value = df['updatedTotalValue'].fillna(df['createdTotalValue']).sum()
-        total_income = df['incomePerYear'].fillna(0).sum() + df['rentalIncome'].fillna(0).sum()
-        categories_count = df['category'].value_counts().to_dict()
-        risk_distribution = df['riskLevel'].value_counts().to_dict()
-        monthly_accumulation = df['accumulationAmount'].fillna(0).sum()
+        # NUOVA LOGICA: Considera solo record più recenti per ogni asset unico
+        # Asset identificato da: category + asset_name + position + isin
+        
+        # Crea colonna per identificare univocamente ogni asset
+        df['asset_key'] = (df['category'].fillna('') + '|' + 
+                          df['asset_name'].fillna('') + '|' + 
+                          df['position'].fillna('') + '|' + 
+                          df['isin'].fillna(''))
+        
+        # Converte date per ordinamento (usa updatedAt se disponibile, altrimenti createdAt)
+        df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
+                                            format='%Y-%m-%d', errors='coerce')
+        
+        # Per ogni asset unico, prende solo il record con data più recente
+        latest_records = df.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
+        
+        # Calcola i totali sui record più recenti
+        total_value = latest_records['updated_total_value'].fillna(latest_records['created_total_value']).sum()
+        total_income = (latest_records['income_per_year'].fillna(0).sum() + 
+                       latest_records['rental_income'].fillna(0).sum())
+        categories_count = latest_records['category'].value_counts().to_dict()
+        risk_distribution = latest_records['risk_level'].value_counts().to_dict()
+        monthly_accumulation = latest_records['accumulation_amount'].fillna(0).sum()
         
         return {
             'total_value': total_value,
@@ -278,3 +412,31 @@ class PortfolioManager:
             'risk_distribution': risk_distribution,
             'monthly_accumulation': monthly_accumulation
         }
+    
+    def get_current_assets_only(self):
+        """
+        Ritorna solo gli asset più recenti (un record per ogni asset unico)
+        Utile per verificare la logica di deduplica
+        """
+        df = self.load_data()
+        
+        if df.empty:
+            return df
+        
+        # Crea chiave univoca per ogni asset
+        df['asset_key'] = (df['category'].fillna('') + '|' + 
+                          df['asset_name'].fillna('') + '|' + 
+                          df['position'].fillna('') + '|' + 
+                          df['isin'].fillna(''))
+        
+        # Converte date per ordinamento
+        df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
+                                            format='%Y-%m-%d', errors='coerce')
+        
+        # Prende solo il record più recente per ogni asset
+        latest_records = df.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
+        
+        # Rimuove le colonne helper
+        latest_records = latest_records.drop(['asset_key', 'effective_date'], axis=1)
+        
+        return latest_records
