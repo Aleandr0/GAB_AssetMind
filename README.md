@@ -1,13 +1,13 @@
 # GAB AssetMind - Portfolio Manager
 
-Un'applicazione Python per il monitoraggio e la gestione di portafogli diversificati con interfaccia grafica moderna.
+Un'applicazione Python avanzata per il monitoraggio e la gestione di portafogli diversificati con interfaccia grafica moderna e funzionalità professionali.
 
 ## 📊 Caratteristiche Principali
 
 ### Tipi di Asset Supportati
 - **ETF**: Fondi indicizzati/attivi quotati in borsa
-- **Azioni**: Titoli azionari singoli
-- **Obbligazioni**: Governative, corporate, convertibili
+- **Azioni**: Titoli azionari singoli  
+- **Fondi di investimento**: Fondi comuni e gestioni patrimoniali
 - **Buoni del Tesoro**: BOT, BTP, CTZ, ecc.
 - **PAC**: Piani di accumulo periodici su fondi/ETF
 - **Criptovalute**: Bitcoin, Ethereum, stablecoin, ecc.
@@ -15,15 +15,38 @@ Un'applicazione Python per il monitoraggio e la gestione di portafogli diversifi
 - **Immobiliare**: Proprietà fisiche e quote di società immobiliari
 - **Oggetti**: Automobili, gioielli, metalli preziosi, orologi di lusso
 
-### Funzionalità
-- ✅ Aggiunta, modifica ed eliminazione asset
-- ✅ Categorizzazione automatica con filtri avanzati
-- ✅ Grafici professionali (distribuzione categorie, rischio, performance)
-- ✅ Export CSV/PDF con report dettagliati
-- ✅ Persistenza dati in formato Excel
-- ✅ Calcolo automatico performance e rendimenti
-- ✅ Monitoraggio piani di accumulo
-- ✅ Tracking redditi da investimenti e immobiliare
+### 🚀 Funzionalità Avanzate
+
+#### 📈 Gestione Portfolio
+- ✅ **Visualizzazione duale**: Toggle Record/Asset per vedere tutti i record storici o solo asset attuali
+- ✅ **Filtri intelligenti**: Click su intestazioni colonne per filtri popup avanzati
+- ✅ **Indicatori visivi**: Stelle (★) per filtri attivi, contatori dinamici
+- ✅ **Tracking valore real-time**: "Valore selezionato" aggiornato in base a filtri/selezioni
+- ✅ **Zoom tabella**: Controlli zoom dinamici con scrollbar intelligenti
+
+#### 🔄 Tracciamento Storico
+- ✅ **Record evolutivi**: Mantiene storico completo di ogni asset
+- ✅ **Creazione record storici**: Pulsante "Nuovo Record" per aggiornamenti temporali
+- ✅ **Gestione intelligente**: Solo record più recenti nel calcolo valore corrente
+- ✅ **Vista completa**: Possibilità di visualizzare tutta la storia degli asset
+
+#### 🎯 Campi Dinamici
+- ✅ **Attivazione per categoria**: Campi rilevanti abilitati automaticamente
+- ✅ **Valori di default**: "NA" per testo, "0" per numeri in campi non applicabili  
+- ✅ **Feedback visivo**: Campi attivi in bianco, disabilitati in grigio
+- ✅ **Validazione intelligente**: Controlli specifici per ogni tipo di asset
+
+#### 💼 Gestione Asset
+- ✅ **CRUD completo**: Aggiunta, modifica, eliminazione asset
+- ✅ **Modalità storiche**: Creazione nuovi record mantenendo storico
+- ✅ **Form intelligente**: Campi dinamici basati sulla categoria selezionata
+- ✅ **Calcoli automatici**: Performance, rendimenti, valori totali
+
+#### 📊 Analytics e Reporting  
+- ✅ **Grafici interattivi**: Distribuzione categorie, rischio, performance temporale
+- ✅ **Export professionale**: CSV/PDF con report dettagliati
+- ✅ **Metriche avanzate**: Diversi KPI di portfolio calcolati automaticamente
+- ✅ **Persistenza Excel**: Database robusto con backup automatico
 
 ## 🚀 Installazione e Avvio
 
@@ -91,28 +114,41 @@ L'applicazione utilizza un file Excel (`portfolio_data.xlsx`) come database. Il 
 
 ## 🎨 Interfaccia Utente
 
-L'applicazione presenta 4 tab principali:
+### 🎯 Layout Ottimizzato
+- **Navbar compatta**: Altezza ridotta con "Valore Totale" e "Valore selezionato" sempre visibili
+- **Spazi intelligenti**: Layout ottimizzato per massimizzare l'area di lavoro
+- **Responsive design**: Interfaccia adattiva che si adatta alle dimensioni della finestra
 
-### 1. Portfolio
-- Visualizzazione tabellare di tutti gli asset
-- Filtri per categoria
-- Doppio click per modificare asset
-- Sommario con valore totale e reddito annuale
+### 📋 Pagine Principali
 
-### 2. Aggiungi Asset
-- Form completo per inserimento nuovo asset
-- Validazione automatica dati
-- Calcolo automatico valori totali
+#### 1. 📊 Portfolio
+- **Vista duale**: Toggle Record/Asset per visualizzare tutti i record o solo asset attuali
+- **Filtri avanzati**: Click su intestazioni colonne per filtri popup con ricerca
+- **Indicatori visivi**: ★ per filtri attivi, contatori "Record nn" / "Asset mm"
+- **Controlli zoom**: Zoom tabella con scrollbar intelligenti
+- **Tracking valore**: "Valore selezionato" aggiornato real-time
+- **Modifica rapida**: Doppio click per modificare asset
 
-### 3. Grafici
-- Distribuzione per categoria (grafico a torta)
-- Distribuzione del rischio (grafico a barre)
-- Performance nel tempo (grafico a barre valori)
+#### 2. 📝 Asset
+- **Form dinamico**: Campi abilitati/disabilitati in base alla categoria
+- **4 modalità operative**:
+  - 🆕 **Nuovo Asset**: Creazione asset completamente nuovo
+  - ✏️ **Modifica Asset**: Modifica asset esistente (sovrascrive)  
+  - 📈 **Nuovo Record**: Crea record storico per asset esistente
+  - 🗑️ **Pulisci Form**: Reset completo del form
+- **Validazione intelligente**: Valori "NA" o "0" per campi non applicabili
+- **Feedback visuale**: Campi attivi bianchi, disabilitati grigi
 
-### 4. Export
-- Export CSV con dati dettagliati
-- Generazione report PDF professionale
-- Backup del database Excel
+#### 3. 📈 Grafici  
+- **Distribuzione categorie**: Grafico a torta interattivo
+- **Analisi rischio**: Distribuzione per livelli di rischio
+- **Performance temporale**: Evoluzione valore nel tempo
+- **Controlli dinamici**: Selezione tipo grafico con aggiornamento istantaneo
+
+#### 4. 📄 Export
+- **Export CSV**: Dati completi in formato tabellare
+- **Report PDF**: Document professionale con grafici e analisi
+- **Backup Excel**: Copia sicurezza del database
 
 ## 📈 Report PDF
 
@@ -190,4 +226,57 @@ Questo progetto è rilasciato sotto licenza libera per uso personale.
 
 ---
 
-**Sviluppato per la gestione professionale di portafogli diversificati** 🎯
+## 🚀 Roadmap - Future Implementazioni
+
+### 🌐 Integrazione Dati Market
+- **API Prezzi**: Integrazione con provider di dati finanziari (Alpha Vantage, Yahoo Finance)
+- **Aggiornamento automatico**: Refresh prezzi e valutazioni in tempo reale
+- **Alert prezzi**: Notifiche per soglie di prezzo/performance
+- **Tracking dividendi**: Import automatico stacchi e reinvestimenti
+
+### 📊 Analytics Avanzati
+- **Dashboard KPI**: Metriche avanzate (Sharpe ratio, drawdown, alpha/beta)
+- **Analisi correlazioni**: Matrice correlazioni tra asset
+- **Backtesting**: Test strategie su dati storici
+- **Risk metrics**: VaR, stress testing, analisi scenari
+
+### 🔄 Automazione
+- **Import banche/broker**: Connessione diretta con principali istituti
+- **Reconciliazione automatica**: Matching transazioni con estratti conto
+- **Backup cloud**: Sincronizzazione automatica su Google Drive/OneDrive
+- **Scheduler**: Aggiornamenti e report automatici programmati
+
+### 📱 Esperienza Utente
+- **Temi personalizzabili**: Dark/light mode, colori custom
+- **Dashboard modulare**: Widget trascinabili e configurabili  
+- **Multi-valuta**: Supporto portfolio in valute multiple
+- **Mobile companion**: App companion per consultazione mobile
+
+### 💹 Trading & Rebalancing
+- **Suggerimenti rebalancing**: AI-powered portfolio optimization
+- **Tracking ordini**: Gestione ordini pendenti e eseguiti
+- **Analisi performance**: Attribution analysis per contributi performance
+- **Tax optimization**: Ottimizzazione fiscale realizzi/perdite
+
+### 🔐 Sicurezza & Compliance
+- **Crittografia dati**: Encryption database e backup
+- **Multi-utente**: Gestione portfolio multipli con permessi
+- **Audit trail**: Log completo modifiche e accessi
+- **Compliance reporting**: Report per consulenti/commercialisti
+
+### 🌍 Espansione Mercati
+- **Asset internazionali**: Supporto mercati emergenti e frontier
+- **Crypto avanzato**: DeFi tracking, staking rewards, yield farming  
+- **Alternative investments**: Private equity, hedge funds, REITs
+- **ESG scoring**: Metriche sostenibilità e impatto ambientale
+
+### 🤖 Intelligenza Artificiale
+- **Portfolio optimizer**: ML per allocation optimization
+- **Sentiment analysis**: Analisi news e sentiment di mercato
+- **Pattern recognition**: Identificazione pattern tecnici
+- **Chatbot assistente**: AI assistant per domande e analisi
+
+---
+
+**Sviluppato per la gestione professionale di portafogli diversificati** 🎯  
+*In continua evoluzione per soddisfare le esigenze degli investitori moderni*
