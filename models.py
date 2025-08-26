@@ -131,13 +131,23 @@ class PortfolioManager:
     
     def load_data(self) -> pd.DataFrame:
         try:
-            df = pd.read_excel(self.excel_file)
+            # Legge Excel senza convertire "NA" in NaN - mantiene i valori testuali originali
+            df = pd.read_excel(self.excel_file, keep_default_na=False, na_values=[''])
             
             # Formatta le date per rimuovere l'ora durante il caricamento
             date_columns = ['created_at', 'updated_at']
             for col in date_columns:
                 if col in df.columns:
                     df[col] = df[col].apply(self._clean_date_from_excel)
+            
+            # Calcola i valori totali se mancanti (formule Excel non calcolate)
+            if 'created_total_value' in df.columns:
+                mask = pd.isna(df['created_total_value'])
+                df.loc[mask, 'created_total_value'] = df.loc[mask, 'created_amount'].fillna(0) * df.loc[mask, 'created_unit_price'].fillna(0)
+            
+            if 'updated_total_value' in df.columns:
+                mask = pd.isna(df['updated_total_value']) 
+                df.loc[mask, 'updated_total_value'] = df.loc[mask, 'updated_amount'].fillna(0) * df.loc[mask, 'updated_unit_price'].fillna(0)
             
             return df
         except Exception as e:

@@ -68,21 +68,36 @@ python run_app.py
 # Installa le dipendenze
 pip install -r requirements.txt
 
-# Avvia l'applicazione
+# Avvia l'applicazione REFACTORED (raccomandato)
+python main_refactored.py
+
+# Oppure la versione legacy
 python main.py
 ```
+
+### 🆕 Versione Refactored vs Legacy
+- **`main_refactored.py`**: Architettura modulare, performance migliori, più stabile
+- **`main.py`**: Versione originale, mantenuta per compatibilità durante transizione
 
 ## 📁 Struttura del Progetto
 
 ```
 GAB_AssetMind/
-├── main.py              # Applicazione principale con GUI
-├── models.py            # Modelli dati e gestione Excel
-├── export_utils.py      # Utilità per export PDF/CSV
+├── main_refactored.py   # 🆕 Applicazione principale (architettura modulare)
+├── config.py           # 🆕 Configurazione centralizzata
+├── utils.py            # 🆕 Utilità e validazione dati  
+├── ui_components.py    # 🆕 Componenti UI base
+├── asset_form.py       # 🆕 Form gestione asset avanzato
+├── charts_ui.py        # 🆕 Interface grafici ottimizzata
+├── export_ui.py        # 🆕 Sistema export professionale
+├── models.py           # Modelli dati e gestione Excel (migliorato)
+├── main.py             # Applicazione legacy (compatibilità)
+├── export_utils.py     # Utilità per export PDF/CSV
 ├── run_app.py          # Script di avvio con controllo dipendenze
-├── requirements.txt     # Dipendenze Python
-├── portfolio_data.xlsx  # Database Excel (creato automaticamente)
-└── README.md           # Documentazione
+├── requirements.txt    # Dipendenze Python
+├── portfolio_data.xlsx # Database Excel (creato automaticamente)
+├── ARCHITECTURE.md     # 🆕 Documentazione architettura dettagliata
+└── README.md           # Documentazione principale
 ```
 
 ## 💾 Gestione Dati
@@ -220,6 +235,58 @@ Assicurati che matplotlib sia installato correttamente:
 ```bash
 pip install matplotlib --upgrade
 ```
+
+## 🏗️ Architettura Modulare (v2.0)
+
+L'applicazione è stata completamente **refactorizzata** con un'architettura modulare che migliora drasticamente manutenibilità, performance e scalabilità.
+
+### 📁 Nuova Struttura
+- **`main_refactored.py`**: Applicazione principale con architettura modulare
+- **`config.py`**: Configurazione centralizzata (colori, dimensioni, mappature)
+- **`utils.py`**: Utilità riutilizzabili (validazione, formattazione, cache)
+- **`ui_components.py`**: Componenti UI specializzati (NavigationBar, PortfolioTable)
+- **`asset_form.py`**: Form gestione asset con state management avanzato
+- **`charts_ui.py`**: Interface grafici con matplotlib ottimizzato
+- **`export_ui.py`**: Sistema export multi-formato professionale
+
+### 🎯 Vantaggi Architettura
+- ✅ **Separazione Responsabilità**: Ogni modulo ha una funzione specifica
+- ✅ **Componenti Riutilizzabili**: UI components modulari e configurabili
+- ✅ **Gestione Errori Centralizzata**: ErrorHandler con messaggi specifici
+- ✅ **Performance Ottimizzate**: Sistema di cache intelligente per i dati
+- ✅ **Configurazione Centralizzata**: Tutti i parametri UI in un singolo file
+- ✅ **Validazione Robusta**: DataValidator con regole specifiche per campo
+- ✅ **State Management**: Gestione stati form e componenti professionale
+
+### 🔄 Diagramma di Flusso
+
+```mermaid
+graph TD
+    A[Avvio App] --> B[Init Portfolio Manager]
+    B --> C[Setup UI Components]
+    C --> D[NavigationBar + PortfolioTable + AssetForm + Charts + Export]
+    
+    D --> E{User Action}
+    E -->|Select Portfolio| F[Switch Portfolio] 
+    E -->|Navigate Page| G[Show Page Component]
+    E -->|Double Click Asset| H[Edit Asset Form]
+    E -->|Save Asset| I[Validate & Save Data]
+    
+    F --> J[Update All Components]
+    G --> K[Load Page Data]
+    H --> L[Populate Form]
+    I --> M[Refresh UI + Cache]
+    
+    J --> N[Cache Refresh]
+    K --> N
+    L --> O[Enable Form Actions]
+    M --> N
+    
+    N --> P[Update Navbar Values]
+    P --> Q[Ready for Next Action]
+```
+
+Per il diagramma dettagliato dell'architettura, vedi **[ARCHITECTURE.md](ARCHITECTURE.md)**
 
 ## 🆕 Nuove Funzionalità (Ultima Release)
 
