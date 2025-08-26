@@ -275,14 +275,13 @@ class PortfolioTable(BaseUIComponent):
         )
         zoom_in_btn.pack(side="left", padx=2)
         
-        # Bottone pulisci filtri
+        # Bottone pulisci filtri (accanto ai controlli Record/Asset)
         clear_filters_btn = ctk.CTkButton(
-            zoom_frame,
-            text="🗑️ Filtri",
+            toggle_frame,
+            text="🗑️ Pulisci Filtri",
             command=self.clear_all_filters,
-            width=70,
-            height=28,
-            font=ctk.CTkFont(**UIConfig.FONTS['text']),
+            **UIConfig.BUTTON_SIZES['medium'],
+            font=ctk.CTkFont(**UIConfig.FONTS['button']),
             fg_color=UIConfig.COLORS['warning'],
             hover_color=UIConfig.COLORS['warning_hover']
         )
@@ -340,6 +339,9 @@ class PortfolioTable(BaseUIComponent):
         # Bind click su header per filtri
         for col in columns:
             self.portfolio_tree.heading(col, command=lambda c=col: self._show_column_filter(c))
+        
+        # Inizializza gli header senza filtri
+        self._update_column_headers()
     
     def _configure_columns(self, columns: tuple):
         """Configura le colonne della tabella"""
@@ -487,120 +489,126 @@ class PortfolioTable(BaseUIComponent):
             print(f"Errore nel filtro colonna {column}: {e}")
     
     def _create_filter_popup(self, display_column: str, db_column: str, values: list):
-        """Crea il popup per il filtro colonna"""
-        import tkinter as tk
-        from tkinter import ttk
+        """Crea il popup per il filtro colonna (stile legacy semplificato)"""
+        import customtkinter as ctk
         
-        # Crea finestra popup
-        popup = tk.Toplevel(self.portfolio_tree)
-        popup.title(f"Filtro: {display_column}")
-        popup.geometry("300x400")
-        popup.transient(self.portfolio_tree)
+        # Crea finestra popup CTk per consistenza
+        popup = ctk.CTkToplevel(self.parent)
+        popup.title(f"Filter: {display_column}")
+        popup.geometry("280x450")
+        popup.transient(self.parent)
         popup.grab_set()
         
-        # Centra il popup
-        popup.update_idletasks()
-        x = (popup.winfo_screenwidth() // 2) - (300 // 2)
-        y = (popup.winfo_screenheight() // 2) - (400 // 2)
-        popup.geometry(f"300x400+{x}+{y}")
+        self.active_filter_popup = popup
         
-        # Frame principale
-        main_frame = ttk.Frame(popup)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # Header
+        header_label = ctk.CTkLabel(popup, text=f"Filter by {display_column}",
+                                   font=ctk.CTkFont(**UIConfig.FONTS['subheader']))
+        header_label.pack(pady=(15, 10))
         
-        # Titolo
-        title_label = ttk.Label(main_frame, text=f"Filtro per {display_column}", 
-                               font=('TkDefaultFont', 12, 'bold'))
-        title_label.pack(pady=(0, 10))
+        # Search box per filtri di testo (solo per campi testuali)
+        if db_column in ['asset_name', 'position', 'note', 'isin', 'ticker', 'accumulation_plan']:
+            search_entry = ctk.CTkEntry(popup, placeholder_text="Search...", width=240)
+            search_entry.pack(pady=(0, 10), padx=20)
+        else:
+            search_entry = None
         
-        # Campo ricerca
-        search_frame = ttk.Frame(main_frame)
-        search_frame.pack(fill="x", pady=(0, 10))
+        # Frame scrollabile per i checkbox
+        checkbox_frame = ctk.CTkScrollableFrame(popup, width=240, height=280)
+        checkbox_frame.pack(pady=10, padx=20, fill="both", expand=True)
         
-        ttk.Label(search_frame, text="Ricerca:").pack(side="left")
-        search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=search_var)
-        search_entry.pack(side="right", fill="x", expand=True, padx=(5, 0))
+        # Ottieni filtri attivi per questa colonna
+        active_filters = self.column_filters.get(db_column, set())
         
-        # Lista valori con checkbox
-        list_frame = ttk.Frame(main_frame)
-        list_frame.pack(fill="both", expand=True)
-        
-        # Scrollbar per la lista
-        scrollbar = ttk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Listbox con checkboxes simulate
-        values_listbox = tk.Listbox(list_frame, selectmode="multiple", 
-                                   yscrollcommand=scrollbar.set)
-        values_listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=values_listbox.yview)
-        
-        # Popola la lista
+        # Crea checkbox per ogni valore unico
+        checkboxes = {}
         for value in values:
-            values_listbox.insert("end", value)
-        
-        # Seleziona tutti per default
-        values_listbox.select_set(0, "end")
-        
-        # Ricerca in tempo reale
-        def filter_values(*args):
-            search_text = search_var.get().lower()
-            values_listbox.delete(0, "end")
+            # Determina se deve essere selezionato (se non ci sono filtri, seleziona tutti)
+            is_selected = len(active_filters) == 0 or value in active_filters
             
-            filtered_values = [v for v in values if search_text in v.lower()]
-            for value in filtered_values:
-                values_listbox.insert("end", value)
+            checkbox = ctk.CTkCheckBox(
+                checkbox_frame,
+                text=str(value),
+                font=ctk.CTkFont(**UIConfig.FONTS['text'])
+            )
+            checkbox.pack(anchor="w", pady=2, padx=5)
             
-            # Riseleziona tutti i filtrati
-            values_listbox.select_set(0, "end")
-        
-        search_var.trace('w', filter_values)
-        
-        # Bottoni controllo
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=(10, 0))
-        
-        def select_all():
-            values_listbox.select_set(0, "end")
-        
-        def deselect_all():
-            values_listbox.selection_clear(0, "end")
-        
-        def apply_filter():
-            # Ottieni valori selezionati
-            selected_indices = values_listbox.curselection()
-            selected_values = [values_listbox.get(i) for i in selected_indices]
-            
-            if selected_values:
-                # Applica filtro
-                self.column_filters[db_column] = set(selected_values)
+            if is_selected:
+                checkbox.select()
             else:
-                # Rimuovi filtro se nessun valore selezionato
+                checkbox.deselect()
+                
+            checkboxes[value] = checkbox
+        
+        # Funzione ricerca in tempo reale
+        def on_search(*args):
+            if search_entry:
+                search_text = search_entry.get().lower()
+                for value, checkbox in checkboxes.items():
+                    value_text = str(value).lower()
+                    if search_text in value_text:
+                        checkbox.pack(anchor="w", pady=2, padx=5)
+                    else:
+                        checkbox.pack_forget()
+        
+        if search_entry:
+            search_entry.bind('<KeyRelease>', on_search)
+        
+        # Frame bottoni
+        button_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        button_frame.pack(fill="x", pady=10, padx=20)
+        
+        # Bottone Select All
+        def select_all():
+            for checkbox in checkboxes.values():
+                checkbox.select()
+        
+        select_all_btn = ctk.CTkButton(
+            button_frame, text="Select All", command=select_all,
+            width=80, height=28, font=ctk.CTkFont(**UIConfig.FONTS['text'])
+        )
+        select_all_btn.pack(side="left", padx=(0, 5))
+        
+        # Bottone Clear All
+        def clear_all():
+            for checkbox in checkboxes.values():
+                checkbox.deselect()
+        
+        clear_all_btn = ctk.CTkButton(
+            button_frame, text="Clear All", command=clear_all,
+            width=80, height=28, font=ctk.CTkFont(**UIConfig.FONTS['text']),
+            fg_color=UIConfig.COLORS['secondary']
+        )
+        clear_all_btn.pack(side="left", padx=5)
+        
+        # Bottone Apply
+        def apply_filter():
+            # Raccogli valori selezionati
+            selected_values = set()
+            for value, checkbox in checkboxes.items():
+                if checkbox.get():
+                    selected_values.add(str(value))
+            
+            # Applica o rimuovi filtro
+            if len(selected_values) == len(checkboxes) or len(selected_values) == 0:
+                # Se tutti selezionati o nessuno, rimuovi filtro
                 self.column_filters.pop(db_column, None)
+            else:
+                self.column_filters[db_column] = selected_values
             
             # Aggiorna visualizzazione
             self._apply_filters()
-            
-            # Aggiorna header per mostrare filtro attivo
             self._update_column_headers()
             
             popup.destroy()
             self.active_filter_popup = None
         
-        def clear_filter():
-            # Rimuovi filtro per questa colonna
-            self.column_filters.pop(db_column, None)
-            self._apply_filters()
-            self._update_column_headers()
-            popup.destroy()
-            self.active_filter_popup = None
-        
-        # Layout bottoni
-        ttk.Button(button_frame, text="Seleziona Tutti", command=select_all).pack(side="left", padx=(0, 5))
-        ttk.Button(button_frame, text="Deseleziona", command=deselect_all).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Pulisci Filtro", command=clear_filter).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Applica", command=apply_filter).pack(side="right")
+        apply_btn = ctk.CTkButton(
+            button_frame, text="Apply", command=apply_filter,
+            width=80, height=28, font=ctk.CTkFont(**UIConfig.FONTS['text']),
+            fg_color=UIConfig.COLORS['success']
+        )
+        apply_btn.pack(side="right")
         
         # Chiusura popup
         def on_close():
@@ -608,10 +616,6 @@ class PortfolioTable(BaseUIComponent):
             popup.destroy()
         
         popup.protocol("WM_DELETE_WINDOW", on_close)
-        self.active_filter_popup = popup
-        
-        # Focus sul campo ricerca
-        search_entry.focus_set()
     
     def _apply_filters(self):
         """Applica i filtri attivi ai dati"""
@@ -639,24 +643,24 @@ class PortfolioTable(BaseUIComponent):
             print(f"Errore nell'applicazione filtri: {e}")
     
     def _update_column_headers(self):
-        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi"""
+        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi con asterisco"""
         try:
             # Mappa per i nomi delle colonne display -> dataframe
             from config import FieldMapping
             
             for display_name, db_name in FieldMapping.DISPLAY_TO_DB.items():
                 if db_name in self.column_filters:
-                    # Mostra stella per indicare filtro attivo
-                    header_text = f"★ {display_name}"
+                    # Mostra asterisco per indicare filtro attivo (come nella legacy)
+                    header_text = f"{display_name} *"
                 else:
                     # Intestazione normale
                     header_text = display_name
                 
-                # Aggiorna header (se la colonna esiste)
+                # Aggiorna header (se la colonna esiste nella TreeView)
                 try:
                     self.portfolio_tree.heading(display_name, text=header_text)
                 except:
-                    pass  # Colonna non esistente, ignora
+                    pass  # Colonna non esistente nel TreeView, ignora
                     
         except Exception as e:
             print(f"Errore aggiornamento headers: {e}")
