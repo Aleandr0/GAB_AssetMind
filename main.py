@@ -48,6 +48,7 @@ class GABAssetMind:
         
         # Inizializza attributi per la navigazione
         self.current_page = "Portfolio"
+        self.historical_mode = False  # Modalità creazione record storico
         self.page_frames = {}
         self.nav_buttons = {}
         
@@ -64,14 +65,14 @@ class GABAssetMind:
         """Configura l'interfaccia utente con barra di navigazione globale"""
         # Container principale
         self.main_frame = ctk.CTkFrame(self.root)
-        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=5)
         
         # Barra di navigazione globale sempre visibile
         self.create_global_navbar()
         
         # Container per il contenuto delle pagine
         self.content_frame = ctk.CTkFrame(self.main_frame)
-        self.content_frame.pack(fill="both", expand=True, padx=10, pady=(10, 20))
+        self.content_frame.pack(fill="both", expand=True, padx=5, pady=(5, 10))
         
         # Inizializza le pagine
         self.setup_all_pages()
@@ -82,25 +83,35 @@ class GABAssetMind:
     def create_global_navbar(self):
         """Crea la barra di navigazione globale sempre visibile"""
         # Barra principale
-        navbar_frame = ctk.CTkFrame(self.main_frame, height=80)
-        navbar_frame.pack(fill="x", padx=5, pady=(5, 15))
+        navbar_frame = ctk.CTkFrame(self.main_frame, height=65)
+        navbar_frame.pack(fill="x", padx=5, pady=(5, 5))
         navbar_frame.pack_propagate(False)  # Mantiene altezza fissa
         
         # Logo/Nome applicazione (sinistra)
         logo_label = ctk.CTkLabel(navbar_frame, text="GAB AssetMind", 
                                 font=ctk.CTkFont(size=26, weight="bold"),
                                 text_color=("#1f538d", "#14375e"))
-        logo_label.pack(side="left", padx=20, pady=20)
+        logo_label.pack(side="left", padx=20, pady=12)
         
-        # Valore totale portfolio (centro)
-        self.total_value_label = ctk.CTkLabel(navbar_frame, text="Valore Totale: €0", 
+        # Container per valori (centro)
+        values_frame = ctk.CTkFrame(navbar_frame, fg_color="transparent")
+        values_frame.pack(side="left", padx=40, pady=7)
+        
+        # Valore totale portfolio
+        self.total_value_label = ctk.CTkLabel(values_frame, text="Valore Totale: €0", 
                                             font=ctk.CTkFont(size=18, weight="bold"),
                                             text_color=("#2d5016", "#4a7c59"))
-        self.total_value_label.pack(side="left", padx=40, pady=20)
+        self.total_value_label.pack(pady=(3, 0))
+        
+        # Valore selezionato
+        self.selected_value_label = ctk.CTkLabel(values_frame, text="Valore selezionato: €0", 
+                                               font=ctk.CTkFont(size=14),
+                                               text_color=("#1f538d", "#14375e"))
+        self.selected_value_label.pack(pady=(0, 3))
         
         # Container per i bottoni di navigazione (destra)
         nav_buttons_frame = ctk.CTkFrame(navbar_frame, fg_color="transparent")
-        nav_buttons_frame.pack(side="right", padx=20, pady=10)
+        nav_buttons_frame.pack(side="right", padx=20, pady=7)
         
         # Bottoni di navigazione
         self.nav_buttons = {}
@@ -175,28 +186,48 @@ class GABAssetMind:
         
         # Top control frame (filter + zoom controls)
         control_frame = ctk.CTkFrame(frame)
-        control_frame.pack(fill="x", padx=10, pady=10)
+        control_frame.pack(fill="x", padx=10, pady=5)
         
-        # Left side - Filter
-        filter_section = ctk.CTkFrame(control_frame, fg_color="transparent")
-        filter_section.pack(side="left", padx=10)
+        # Filter info section - Just show active filters and clear button
+        filter_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
+        filter_frame.pack(side="left", fill="x", expand=True, padx=10)
         
-        ctk.CTkLabel(filter_section, text="Filter by Category:", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", padx=(0,10))
+        # Filter status label
+        self.filter_status_label = ctk.CTkLabel(filter_frame, text="Click column headers to filter ▼", 
+                                              font=ctk.CTkFont(size=12))
+        self.filter_status_label.pack(side="left", padx=(0,15))
         
-        categories = ["All"] + self.portfolio_manager.categories
-        self.category_filter = ctk.CTkComboBox(filter_section, values=categories, 
-                                             command=self.filter_portfolio, width=120)
-        self.category_filter.pack(side="left")
-        self.category_filter.set("All")
+        # Clear filters button
+        self.clear_filters_btn = ctk.CTkButton(filter_frame, text="Clear All Filters", 
+                                             command=self.clear_all_filters, width=120,
+                                             font=ctk.CTkFont(size=12, weight="bold"))
+        self.clear_filters_btn.pack(side="left", padx=10)
+        
+        # Middle section - View toggle buttons (Record vs Asset view)
+        view_section = ctk.CTkFrame(control_frame, fg_color="transparent")
+        view_section.pack(side="left", padx=20)
+        
+        # Inizializza modalità visualizzazione (True = tutti i record, False = solo asset attuali)
+        self.show_all_records = False  # Default: mostra solo asset attuali
+        
+        # Pulsanti per cambiare visualizzazione
+        self.records_btn = ctk.CTkButton(view_section, text="Record 0", 
+                                       command=self.show_all_records_view, width=100, height=30,
+                                       font=ctk.CTkFont(size=11, weight="bold"),
+                                       fg_color="#6b7280", hover_color="#4b5563")
+        self.records_btn.pack(side="left", padx=2)
+        
+        self.assets_btn = ctk.CTkButton(view_section, text="Asset 0", 
+                                      command=self.show_assets_only_view, width=100, height=30,
+                                      font=ctk.CTkFont(size=11, weight="bold"),
+                                      fg_color="#3b82f6", hover_color="#2563eb")  # Blu = attivo inizialmente
+        self.assets_btn.pack(side="left", padx=2)
         
         # Right side - Zoom and info controls
         zoom_section = ctk.CTkFrame(control_frame, fg_color="transparent")
         zoom_section.pack(side="right", padx=10)
         
-        # Asset count label
-        self.assets_count_label = ctk.CTkLabel(zoom_section, text="Assets: 0",
-                                             font=ctk.CTkFont(size=14, weight="bold"))
-        self.assets_count_label.pack(side="left", padx=(0,20))
+        # Asset count label rimosso - ora è nei pulsanti Record/Asset
         
         # Zoom controls
         ctk.CTkLabel(zoom_section, text="Zoom:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0,5))
@@ -258,9 +289,17 @@ class GABAssetMind:
         # TreeView with scrollbars - PRIMA creare l'oggetto
         self.portfolio_tree = ttk.Treeview(tree_container, columns=columns, show='headings')
         
-        # POI configurare le colonne
+        # Initialize column filters
+        self.column_filters = {}  # Dizionario per mantenere i filtri attivi per colonna
+        self.active_filter_popup = None  # Riferimento al popup attualmente aperto
+        self.column_names = columns  # Salva i nomi delle colonne per aggiornare le intestazioni
+        
+        # Configurare le colonne con intestazioni cliccabili
         for col in columns:
-            self.portfolio_tree.heading(col, text=col)
+            # Aggiunge freccia per indicare possibilità di filtro
+            header_text = f"{col} ▼"
+            self.portfolio_tree.heading(col, text=header_text, 
+                                      command=lambda c=col: self.show_column_filter(c))
             # Allineamento a destra per campi numerici, a sinistra per gli altri
             anchor = "e" if col in numeric_columns else "w"  # "e" = east (destra), "w" = west (sinistra)
             self.portfolio_tree.column(col, width=column_widths.get(col, 80), minwidth=60, anchor=anchor)
@@ -422,7 +461,7 @@ class GABAssetMind:
         
         # Header con titolo e bottoni
         header_frame = ctk.CTkFrame(frame)
-        header_frame.pack(fill="x", padx=10, pady=10)
+        header_frame.pack(fill="x", padx=10, pady=5)
         
         # Titolo (salviamo reference per poterlo aggiornare)
         self.asset_title_label = ctk.CTkLabel(header_frame, text="Nuovo Asset", 
@@ -450,19 +489,57 @@ class GABAssetMind:
                               fg_color="#16a34a", hover_color="#15803d")
         new_btn.pack(side="left", padx=5)
         
+        # Pulsante Nuovo Record (solo visibile quando c'è un asset da copiare)
+        self.historical_btn = ctk.CTkButton(button_frame, text="📈 Nuovo Record", 
+                                          command=self.create_historical_record_mode, width=140, height=40,
+                                          font=ctk.CTkFont(size=14, weight="bold"),
+                                          fg_color="#7c3aed", hover_color="#6d28d9")
+        # Inizialmente nascosto, verrà mostrato quando necessario
+        
         # Scrollable frame per il form
         form_scroll = ctk.CTkScrollableFrame(frame)
-        form_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        form_scroll.pack(fill="both", expand=True, padx=10, pady=5)
         
         # Form frame con layout 2x2
         form_frame = ctk.CTkFrame(form_scroll)
-        form_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        form_frame.pack(fill="both", expand=True, padx=5, pady=5)
         form_frame.grid_columnconfigure(0, weight=1)
         form_frame.grid_columnconfigure(1, weight=1)
         
         # Inizializza il form
         self.form_vars = {}
+        self.form_widgets = {}  # Per poter disabilitare i campi
+        
+        # Mappatura campi rilevanti per categoria
+        self.category_field_mapping = {
+            "ETF": ["ticker", "isin", "income_per_year"],
+            "Azioni": ["ticker", "isin", "income_per_year"], 
+            "Fondi di investimento": ["ticker", "isin", "income_per_year"],
+            "Buoni del Tesoro": ["isin", "income_per_year"],
+            "PAC": ["ticker", "isin", "accumulation_plan", "accumulation_amount", "income_per_year"],
+            "Criptovalute": ["ticker"],
+            "Liquidità": ["income_per_year"],
+            "Immobiliare": ["rental_income"],
+            "Oggetti": []
+        }
+        
+        # Mappatura campi numerici (riceveranno "0" quando non applicabili)
+        self.numeric_fields = {
+            "income_per_year", "rental_income", "accumulation_amount"
+        }
+        
+        # Campi sempre attivi (per tutte le categorie)
+        self.always_active_fields = [
+            "category", "asset_name", "position", "risk_level", 
+            "created_at", "created_amount", "created_unit_price", "created_total_value",
+            "updated_at", "updated_amount", "updated_unit_price", "updated_total_value", 
+            "note"
+        ]
+        
         self.create_asset_form(form_frame)
+        
+        # Inizializza con tutti i campi abilitati (nessuna categoria selezionata inizialmente)
+        self.initialize_form_fields()
     
     def setup_analytics_page(self):
         """Configura la pagina Grafici"""
@@ -470,7 +547,7 @@ class GABAssetMind:
         
         # Control frame
         control_frame = ctk.CTkFrame(frame)
-        control_frame.pack(fill="x", padx=10, pady=10)
+        control_frame.pack(fill="x", padx=10, pady=5)
         
         chart_types = ["Distribuzione per Categoria", "Distribuzione Rischio", "Performance nel Tempo"]
         self.chart_type = ctk.CTkComboBox(control_frame, values=chart_types, 
@@ -570,12 +647,55 @@ class GABAssetMind:
             if values:  # ComboBox per campi con valori predefiniti
                 var = ctk.StringVar()
                 widget = ctk.CTkComboBox(field_frame, values=values, variable=var, width=180)
+                # Se è la categoria, aggiungi callback per cambiare campi attivi
+                if key == "category":
+                    widget.configure(command=self.on_category_change)
             else:  # Entry per campi liberi
                 var = ctk.StringVar()
                 widget = ctk.CTkEntry(field_frame, textvariable=var, width=180)
             
             widget.pack(side="right", padx=10, pady=8)
             self.form_vars[key] = var
+            self.form_widgets[key] = widget  # Salva il widget per poterlo disabilitare
+    
+    def on_category_change(self, selected_category):
+        """Gestisce il cambio di categoria abilitando/disabilitando i campi appropriati"""
+        if not hasattr(self, 'category_field_mapping'):
+            return
+            
+        # Ottieni i campi rilevanti per questa categoria
+        relevant_fields = self.always_active_fields + self.category_field_mapping.get(selected_category, [])
+        
+        # Abilita/disabilita i campi in base alla categoria
+        for field_key, widget in self.form_widgets.items():
+            if field_key in relevant_fields:
+                # Campo rilevante - abilita
+                widget.configure(state='normal')
+                try:
+                    widget.configure(fg_color=("white", "#343638"))  # Colore normale
+                except:
+                    pass
+            else:
+                # Campo non rilevante - disabilita e imposta valore di default
+                widget.configure(state='disabled') 
+                try:
+                    widget.configure(fg_color=("#D0D0D0", "#404040"))  # Grigio
+                except:
+                    pass
+                # Imposta valore di default per campi non applicabili
+                if field_key in self.numeric_fields:
+                    self.form_vars[field_key].set("0")
+                else:
+                    self.form_vars[field_key].set("NA")
+    
+    def initialize_form_fields(self):
+        """Inizializza i campi del form (tutti abilitati di default)"""
+        for widget in self.form_widgets.values():
+            widget.configure(state='normal')
+            try:
+                widget.configure(fg_color=("white", "#343638"))  # Colore normale
+            except:
+                pass
     
     
         
@@ -588,53 +708,24 @@ class GABAssetMind:
     
     def load_portfolio_data(self):
         """Carica i dati del portfolio dal file Excel e aggiorna la visualizzazione"""
-        df = self.portfolio_manager.load_data()
+        # Carica dati in base alla modalità di visualizzazione
+        if hasattr(self, 'show_all_records') and self.show_all_records:
+            # Mostra tutti i record (inclusi storici)
+            df = self.portfolio_manager.load_data()
+        else:
+            # Mostra solo asset più recenti (default)
+            df = self.portfolio_manager.get_current_assets_only()
+        
+        # Aggiorna i contatori dei pulsanti
+        if hasattr(self, 'records_btn'):
+            self.update_view_button_counts()
         
         if df.empty:
             self.update_summary()
             return
         
-        # Clear existing data
-        for item in self.portfolio_tree.get_children():
-            self.portfolio_tree.delete(item)
-        
-        # Load new data
-        for _, row in df.iterrows():
-            current_value = row['updated_total_value'] if pd.notna(row['updated_total_value']) else row['created_total_value']
-            initial_value = row['created_total_value'] if pd.notna(row['created_total_value']) else 0
-            total_income = (row['income_per_year'] if pd.notna(row['income_per_year']) else 0) + \
-                          (row['rental_income'] if pd.notna(row['rental_income']) else 0)
-            
-            # Calcola performance percentuale
-            performance = 0
-            if pd.notna(initial_value) and initial_value > 0 and pd.notna(current_value):
-                performance = ((current_value - initial_value) / initial_value) * 100
-            
-            self.portfolio_tree.insert("", "end", values=(
-                row['id'],  # ID
-                row['category'],  # Category
-                str(row['position']) if pd.notna(row['position']) else "-",  # Position
-                str(row['asset_name'])[:20] + "..." if len(str(row['asset_name'])) > 20 else str(row['asset_name']),  # Asset Name
-                str(row['isin']) if pd.notna(row['isin']) else "-",  # ISIN
-                str(row['ticker']) if pd.notna(row['ticker']) else "-",  # Ticker
-                row['risk_level'],  # Risk Level
-                self.format_date_for_display(row['created_at']),  # Created At
-                f"{row['created_amount']:,.2f}" if pd.notna(row['created_amount']) else "0",  # Created Amount
-                f"€{row['created_unit_price']:,.2f}" if pd.notna(row['created_unit_price']) else "€0",  # Created Unit Price
-                f"€{initial_value:,.0f}" if pd.notna(initial_value) else "€0",  # Created Total Value
-                self.format_date_for_display(row['updated_at']),  # Updated At
-                f"{row['updated_amount']:,.2f}" if pd.notna(row['updated_amount']) else "0",  # Updated Amount
-                f"€{row['updated_unit_price']:,.2f}" if pd.notna(row['updated_unit_price']) else "€0",  # Updated Unit Price
-                f"€{current_value:,.0f}" if pd.notna(current_value) else "€0",  # Updated Total Value
-                str(row['accumulation_plan']) if pd.notna(row['accumulation_plan']) else "-",  # Accumulation Plan
-                f"€{row['accumulation_amount']:,.0f}" if pd.notna(row['accumulation_amount']) else "€0",  # Accumulation Amount
-                f"€{row['income_per_year']:,.0f}" if pd.notna(row['income_per_year']) else "€0",  # Income Per Year
-                f"€{row['rental_income']:,.0f}" if pd.notna(row['rental_income']) else "€0",  # Rental Income
-                str(row['note'])[:15] + "..." if pd.notna(row['note']) and len(str(row['note'])) > 15 else (str(row['note']) if pd.notna(row['note']) else "-")  # Note
-            ))
-        
-        # Aggiorna il sommario con i totali
-        self.update_summary()
+        # Usa il nuovo metodo unified per aggiornare la tabella
+        self.update_portfolio_table(df)
         
         # Aggiorna scrollbar dopo caricamento dati
         self.root.after(100, self.update_scrollbars)
@@ -644,31 +735,334 @@ class GABAssetMind:
         summary = self.portfolio_manager.get_portfolio_summary()
         self.total_value_label.configure(text=f"Valore Totale: €{summary['total_value']:,.2f}")
         
-        # Aggiorna conteggio asset
-        df = self.portfolio_manager.load_data()
-        self.assets_count_label.configure(text=f"Assets: {len(df)}")
+        # Conteggio asset ora gestito nei pulsanti Record/Asset
     
-    def filter_portfolio(self, category=None):
-        """Filtra il portfolio per categoria"""
-        if category is None:
-            category = self.category_filter.get()
-        self.filter_by_category(category)
     
-    def filter_by_category(self, category):
-        df = self.portfolio_manager.load_data()
+    def show_column_filter(self, column):
+        """Mostra il filtro per una specifica colonna"""
+        try:
+            # Chiudi popup precedente se aperto
+            if self.active_filter_popup:
+                self.active_filter_popup.destroy()
+                self.active_filter_popup = None
+            
+            # Ottieni i valori unici per questa colonna
+            df = self.portfolio_manager.get_current_assets_only()
+            if df.empty:
+                return
+            
+            # Converti il nome colonna display in nome DataFrame
+            column_mapping = {
+                "ID": "id", "Category": "category", "Position": "position", 
+                "Asset Name": "asset_name", "ISIN": "isin", "Ticker": "ticker",
+                "Risk Level": "risk_level", "Created At": "created_at", 
+                "Created Amount": "created_amount", "Created Unit Price": "created_unit_price",
+                "Created Total Value": "created_total_value", "Updated At": "updated_at",
+                "Updated Amount": "updated_amount", "Updated Unit Price": "updated_unit_price", 
+                "Updated Total Value": "updated_total_value", "Accumulation Plan": "accumulation_plan",
+                "Accumulation Amount": "accumulation_amount", "Income Per Year": "income_per_year",
+                "Rental Income": "rental_income", "Note": "note"
+            }
+            
+            df_column = column_mapping.get(column, column.lower().replace(" ", "_"))
+            if df_column not in df.columns:
+                return
+            
+            # Ottieni valori unici (escludendo NaN)
+            unique_values = df[df_column].dropna().unique()
+            
+            # Ordina i valori
+            if df[df_column].dtype in ['int64', 'float64']:
+                unique_values = sorted(unique_values)
+            else:
+                unique_values = sorted([str(v) for v in unique_values])
+            
+            # Crea popup filter
+            self.create_filter_popup(column, df_column, unique_values)
+            
+        except Exception as e:
+            print(f"Errore nella creazione filtro colonna: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def create_filter_popup(self, display_column, df_column, unique_values):
+        """Crea il popup di filtro per una colonna"""
+        # Crea finestra popup
+        popup = ctk.CTkToplevel(self.root)
+        popup.title(f"Filter: {display_column}")
+        popup.geometry("250x400")
+        popup.transient(self.root)
+        popup.grab_set()
         
+        self.active_filter_popup = popup
+        
+        # Header
+        header_label = ctk.CTkLabel(popup, text=f"Filter by {display_column}", 
+                                   font=ctk.CTkFont(size=14, weight="bold"))
+        header_label.pack(pady=10)
+        
+        # Search box per filtri di testo
+        if df_column in ['asset_name', 'position', 'note', 'isin', 'ticker', 'accumulation_plan']:
+            search_frame = ctk.CTkFrame(popup, fg_color="transparent")
+            search_frame.pack(fill="x", padx=10, pady=5)
+            
+            search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search...")
+            search_entry.pack(fill="x")
+            
+            def on_search(*args):
+                search_text = search_entry.get().lower()
+                for item in checkbox_frame.winfo_children():
+                    if isinstance(item, ctk.CTkCheckBox):
+                        item_text = item.cget("text").lower()
+                        if search_text in item_text:
+                            item.pack(fill="x", padx=5, pady=2)
+                        else:
+                            item.pack_forget()
+            
+            search_entry.bind('<KeyRelease>', on_search)
+        
+        # Scrollable frame per checkboxes
+        checkbox_frame = ctk.CTkScrollableFrame(popup, height=250)
+        checkbox_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # "All" option
+        all_var = ctk.BooleanVar(value=df_column not in self.column_filters)
+        all_checkbox = ctk.CTkCheckBox(checkbox_frame, text="(All)", variable=all_var)
+        all_checkbox.pack(fill="x", padx=5, pady=2)
+        
+        # Checkboxes per ogni valore unico
+        value_vars = {}
+        current_filter = self.column_filters.get(df_column, set())
+        
+        for value in unique_values:
+            display_value = str(value)[:30] + "..." if len(str(value)) > 30 else str(value)
+            is_checked = len(current_filter) == 0 or value in current_filter
+            
+            var = ctk.BooleanVar(value=is_checked)
+            checkbox = ctk.CTkCheckBox(checkbox_frame, text=display_value, variable=var)
+            checkbox.pack(fill="x", padx=5, pady=2)
+            value_vars[value] = var
+        
+        # Funzione per gestire "All"
+        def toggle_all():
+            select_all = all_var.get()
+            for var in value_vars.values():
+                var.set(select_all)
+        
+        all_checkbox.configure(command=toggle_all)
+        
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        buttons_frame.pack(fill="x", padx=10, pady=10)
+        
+        def apply_filter():
+            selected_values = set()
+            for value, var in value_vars.items():
+                if var.get():
+                    selected_values.add(value)
+            
+            if len(selected_values) == len(unique_values) or len(selected_values) == 0:
+                # Tutti selezionati = nessun filtro
+                if df_column in self.column_filters:
+                    del self.column_filters[df_column]
+            else:
+                self.column_filters[df_column] = selected_values
+            
+            self.apply_column_filters()
+            popup.destroy()
+            self.active_filter_popup = None
+        
+        def clear_filter():
+            if df_column in self.column_filters:
+                del self.column_filters[df_column]
+            self.apply_column_filters()
+            popup.destroy()
+            self.active_filter_popup = None
+        
+        # Apply e Clear buttons
+        apply_btn = ctk.CTkButton(buttons_frame, text="Apply", command=apply_filter, width=100)
+        apply_btn.pack(side="left", padx=5)
+        
+        clear_btn = ctk.CTkButton(buttons_frame, text="Clear", command=clear_filter, width=100)
+        clear_btn.pack(side="right", padx=5)
+    
+    def apply_column_filters(self):
+        """Applica tutti i filtri di colonna attivi"""
+        try:
+            df = self.portfolio_manager.get_current_assets_only()
+            
+            # Applica ogni filtro di colonna
+            for df_column, values in self.column_filters.items():
+                if len(values) > 0:
+                    df = df[df[df_column].isin(values)]
+            
+            # Aggiorna la tabella
+            self.update_portfolio_table(df)
+            
+            # Aggiorna status label
+            if len(self.column_filters) > 0:
+                filter_text = f"{len(self.column_filters)} filter(s) active"
+                self.filter_status_label.configure(text=filter_text)
+            else:
+                self.filter_status_label.configure(text="Click column headers to filter ▼")
+            
+            # Aggiorna le intestazioni delle colonne per mostrare i filtri attivi
+            self.update_column_headers()
+            
+            # Aggiorna il valore delle righe visibili dopo aver applicato i filtri
+            self.update_visible_value()
+                
+        except Exception as e:
+            print(f"Errore nell'applicazione filtri colonna: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def clear_all_filters(self):
+        """Rimuove tutti i filtri attivi"""
+        try:
+            self.column_filters.clear()
+            self.apply_column_filters()
+            
+        except Exception as e:
+            print(f"Errore nella pulizia filtri: {e}")
+    
+    def show_all_records_view(self):
+        """Mostra tutti i record (inclusi i duplicati storici)"""
+        self.show_all_records = True
+        # Aggiorna colori pulsanti
+        self.records_btn.configure(fg_color="#3b82f6", hover_color="#2563eb")  # Blu = attivo
+        self.assets_btn.configure(fg_color="#6b7280", hover_color="#4b5563")   # Grigio = inattivo
+        # Ricarica la visualizzazione
+        self.load_portfolio_data()
+    
+    def show_assets_only_view(self):
+        """Mostra solo gli asset più recenti (un record per asset)"""
+        self.show_all_records = False
+        # Aggiorna colori pulsanti
+        self.records_btn.configure(fg_color="#6b7280", hover_color="#4b5563")   # Grigio = inattivo
+        self.assets_btn.configure(fg_color="#3b82f6", hover_color="#2563eb")    # Blu = attivo
+        # Ricarica la visualizzazione
+        self.load_portfolio_data()
+    
+    def update_view_button_counts(self):
+        """Aggiorna i contatori nei pulsanti Record/Asset"""
+        try:
+            # Carica tutti i dati per contare
+            all_records_df = self.portfolio_manager.load_data()
+            current_assets_df = self.portfolio_manager.get_current_assets_only()
+            
+            total_records = len(all_records_df)
+            unique_assets = len(current_assets_df)
+            
+            # Aggiorna testi pulsanti
+            self.records_btn.configure(text=f"Record {total_records}")
+            self.assets_btn.configure(text=f"Asset {unique_assets}")
+            
+        except Exception as e:
+            print(f"Errore nell'aggiornamento contatori: {e}")
+            self.records_btn.configure(text="Record 0")
+            self.assets_btn.configure(text="Asset 0")
+    
+    def update_visible_value(self):
+        """Calcola e aggiorna il valore delle righe visibili nella tabella"""
+        try:
+            visible_value = 0.0
+            visible_count = 0
+            
+            # Scorre tutte le righe visibili nella tabella
+            for child in self.portfolio_tree.get_children():
+                item_values = self.portfolio_tree.item(child)['values']
+                if len(item_values) >= 15:
+                    current_total = item_values[14]  # "Updated Total Value"
+                    try:
+                        # Rimuovi simboli di valuta e formattazione
+                        current_total_str = str(current_total).replace('€', '').replace(',', '').strip()
+                        if current_total_str and current_total_str != 'N/A':
+                            value = float(current_total_str)
+                            visible_value += value
+                            visible_count += 1
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Aggiorna l'etichetta
+            self.selected_value_label.configure(text=f"Valore selezionato: €{visible_value:,.2f}")
+            print(f"DEBUG: Aggiornato valore visibile: €{visible_value:,.2f} ({visible_count} righe)")
+            
+        except Exception as e:
+            print(f"Errore nell'aggiornamento valore visibile: {e}")
+            self.selected_value_label.configure(text="Valore selezionato: €0")
+    
+    def update_selected_value_with_total(self):
+        """Aggiorna il valore selezionato con il totale del portfolio quando non c'è selezione"""
+        try:
+            summary = self.portfolio_manager.get_portfolio_summary()
+            total_value = summary.get('total_value', 0)
+            self.selected_value_label.configure(text=f"Valore selezionato: €{total_value:,.2f}")
+        except Exception as e:
+            self.selected_value_label.configure(text="Valore selezionato: €0")
+    
+    def update_column_headers(self):
+        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi"""
+        try:
+            # Mappa per i nomi delle colonne display -> dataframe
+            column_mapping = {
+                "Asset Type": "asset_type",
+                "Asset Name": "asset_name", 
+                "Asset Symbol": "asset_symbol",
+                "Country": "country",
+                "Currency": "currency",
+                "Created Date": "created_date",
+                "Created Amount": "created_amount",
+                "Created Unit Price": "created_unit_price",
+                "Created Total": "created_total",
+                "Current Date": "current_date",
+                "Current Amount": "current_amount",
+                "Current Unit Price": "current_unit_price", 
+                "Current Total": "current_total",
+                "Profit/Loss": "profit_loss",
+                "P&L %": "profit_loss_percentage",
+                "Sector": "sector",
+                "ISIN": "isin",
+                "Notes": "notes",
+                "Exchange": "exchange",
+                "Rating": "rating"
+            }
+            
+            for display_col in self.column_names:
+                df_column = column_mapping.get(display_col, display_col.lower().replace(" ", "_"))
+                
+                # Controlla se questa colonna ha un filtro attivo
+                if df_column in self.column_filters:
+                    # Intestazione per colonna filtrata (effetto grafico visibile)
+                    header_text = f"★ {display_col} ▼"
+                else:
+                    # Intestazione normale
+                    header_text = f"{display_col} ▼"
+                
+                self.portfolio_tree.heading(display_col, text=header_text,
+                                          command=lambda c=display_col: self.show_column_filter(c))
+            
+        except Exception as e:
+            print(f"Errore nell'aggiornamento intestazioni: {e}")
+    
+    def update_portfolio_table(self, df):
+        """Aggiorna la tabella Portfolio con i dati forniti"""
         # Clear existing data
         for item in self.portfolio_tree.get_children():
             self.portfolio_tree.delete(item)
         
-        # Filter data
-        if category != "All":
-            df = df[df['category'] == category]
-        
-        # Load filtered data
+        # Load new data
         for _, row in df.iterrows():
-            current_value = row['updated_total_value'] if pd.notna(row['updated_total_value']) else row['created_total_value']
-            initial_value = row['created_total_value'] if pd.notna(row['created_total_value']) else 0
+            # Calcola i valori totali in Python (le formule Excel potrebbero non essere valutate)
+            created_total_calc = (row['created_amount'] if pd.notna(row['created_amount']) else 0) * \
+                                (row['created_unit_price'] if pd.notna(row['created_unit_price']) else 0)
+            updated_total_calc = (row['updated_amount'] if pd.notna(row['updated_amount']) else 0) * \
+                                (row['updated_unit_price'] if pd.notna(row['updated_unit_price']) else 0)
+            
+            # Usa i valori calcolati se le formule Excel non sono disponibili
+            current_value = row['updated_total_value'] if pd.notna(row['updated_total_value']) else updated_total_calc
+            initial_value = row['created_total_value'] if pd.notna(row['created_total_value']) else created_total_calc
+            
             total_income = (row['income_per_year'] if pd.notna(row['income_per_year']) else 0) + \
                           (row['rental_income'] if pd.notna(row['rental_income']) else 0)
             
@@ -688,17 +1082,23 @@ class GABAssetMind:
                 self.format_date_for_display(row['created_at']),  # Created At
                 f"{row['created_amount']:,.2f}" if pd.notna(row['created_amount']) else "0",  # Created Amount
                 f"€{row['created_unit_price']:,.2f}" if pd.notna(row['created_unit_price']) else "€0",  # Created Unit Price
-                f"€{initial_value:,.0f}" if pd.notna(initial_value) else "€0",  # Created Total Value
+                f"€{created_total_calc:,.0f}" if created_total_calc > 0 else "€0",  # Created Total Value
                 self.format_date_for_display(row['updated_at']),  # Updated At
                 f"{row['updated_amount']:,.2f}" if pd.notna(row['updated_amount']) else "0",  # Updated Amount
                 f"€{row['updated_unit_price']:,.2f}" if pd.notna(row['updated_unit_price']) else "€0",  # Updated Unit Price
-                f"€{current_value:,.0f}" if pd.notna(current_value) else "€0",  # Updated Total Value
-                str(row['accumulation_plan']) if pd.notna(row['accumulation_plan']) else "-",  # Accumulation Plan
-                f"€{row['accumulation_amount']:,.0f}" if pd.notna(row['accumulation_amount']) else "€0",  # Accumulation Amount
-                f"€{row['income_per_year']:,.0f}" if pd.notna(row['income_per_year']) else "€0",  # Income Per Year
-                f"€{row['rental_income']:,.0f}" if pd.notna(row['rental_income']) else "€0",  # Rental Income
-                str(row['note'])[:15] + "..." if pd.notna(row['note']) and len(str(row['note'])) > 15 else (str(row['note']) if pd.notna(row['note']) else "-")  # Note
+                f"€{updated_total_calc:,.0f}" if updated_total_calc > 0 else "€0",  # Updated Total Value
+                str(row['accumulation_plan']) if pd.notna(row['accumulation_plan']) and row['accumulation_plan'] != "" else "-",  # Accumulation Plan
+                f"€{row['accumulation_amount']:,.0f}" if pd.notna(row['accumulation_amount']) and row['accumulation_amount'] > 0 else "-",  # Accumulation Amount
+                f"€{row['income_per_year']:,.0f}" if pd.notna(row['income_per_year']) and row['income_per_year'] > 0 else "€0",  # Income Per Year
+                f"€{row['rental_income']:,.0f}" if pd.notna(row['rental_income']) and row['rental_income'] > 0 else "€0",  # Rental Income
+                str(row['note']) if pd.notna(row['note']) and row['note'] != "" else "-"  # Note
             ))
+        
+        # Aggiorna il sommario
+        self.update_summary()
+        
+        # Inizializza il valore delle righe visibili
+        self.update_visible_value()
     
     def save_asset(self):
         """Salva un asset dal form nella base dati Excel"""
@@ -799,6 +1199,8 @@ class GABAssetMind:
     def clear_form(self):
         for var in self.form_vars.values():
             var.set("")
+        # Riabilita tutti i campi dopo aver pulito il form
+        self.initialize_form_fields()
     
     def edit_asset(self, event):
         selection = self.portfolio_tree.selection()
@@ -816,8 +1218,13 @@ class GABAssetMind:
                 # Aggiorna titolo per indicare modifica
                 self.update_asset_form_title("Modifica Asset")
                 
+                # Mostra il pulsante "Nuovo Record" in modalità modifica
+                self.historical_btn.pack(side="left", padx=5)
+                
                 # Populate form with asset data
                 self.form_vars['category'].set(asset.category)
+                # Aggiorna campi attivi in base alla categoria
+                self.on_category_change(asset.category)
                 self.form_vars['asset_name'].set(asset.asset_name)
                 self.form_vars['position'].set(str(asset.position))
                 self.form_vars['risk_level'].set(str(asset.risk_level))
@@ -848,11 +1255,110 @@ class GABAssetMind:
         """Esce dalla modalità modifica e torna alla creazione nuovo asset"""
         self.editing_asset_id = None
         self.update_asset_form_title("Nuovo Asset")
+        # Nascondi il pulsante "Nuovo Record" quando non siamo in modalità modifica
+        self.historical_btn.pack_forget()
     
     def new_asset_mode(self):
         """Passa alla modalità Nuovo Asset (esce dalla modifica)"""
         self.clear_form()
         self.clear_edit_mode()
+        self.disable_historical_mode()
+    
+    def create_historical_record_mode(self):
+        """Modalità creazione nuovo record storico: copia dati correnti e disabilita tutto tranne Updated Amount/Price"""
+        if self.editing_asset_id is not None:
+            # Copia tutti i dati dell'asset corrente
+            asset = self.portfolio_manager.get_asset(self.editing_asset_id)
+            if asset:
+                # Esce dalla modalità modifica per entrare in modalità creazione
+                self.clear_edit_mode()
+                
+                # Popola il form con i dati esistenti
+                self.populate_form_with_asset(asset)
+                
+                # Aggiorna immediatamente la data Updated At
+                from datetime import datetime
+                current_date = datetime.now().strftime("%Y-%m-%d")
+                self.form_vars['updated_at'].set(current_date)
+                
+                # Abilita la modalità storico
+                self.enable_historical_mode()
+                
+                # Aggiorna il titolo
+                self.update_asset_form_title("Nuovo Record Storico")
+    
+    def populate_form_with_asset(self, asset):
+        """Popola il form con i dati di un asset"""
+        self.form_vars['category'].set(asset.category)
+        # Aggiorna campi attivi in base alla categoria
+        self.on_category_change(asset.category)
+        self.form_vars['asset_name'].set(asset.asset_name)
+        self.form_vars['position'].set(str(asset.position))
+        self.form_vars['risk_level'].set(str(asset.risk_level))
+        self.form_vars['ticker'].set(asset.ticker)
+        self.form_vars['isin'].set(asset.isin)
+        self.form_vars['created_amount'].set(str(asset.created_amount))
+        self.form_vars['created_unit_price'].set(str(asset.created_unit_price))
+        # NON copiamo updated_amount e updated_unit_price - l'utente deve inserirli
+        self.form_vars['accumulation_plan'].set(asset.accumulation_plan)
+        self.form_vars['accumulation_amount'].set(str(asset.accumulation_amount))
+        self.form_vars['income_per_year'].set(str(asset.income_per_year))
+        self.form_vars['rental_income'].set(str(asset.rental_income))
+        self.form_vars['note'].set(asset.note)
+    
+    def enable_historical_mode(self):
+        """Disabilita tutti i campi tranne Updated Amount e Updated Unit Price"""
+        self.historical_mode = True
+        
+        # Disabilita tutti i campi tranne Updated Amount e Updated Unit Price
+        for key, widget in self.form_widgets.items():
+            if key not in ['updated_amount', 'updated_unit_price']:
+                # Disabilita e rende grigio il campo
+                widget.configure(state='disabled')
+                # Per CustomTkinter, cambia anche il colore di sfondo per renderlo più grigio
+                try:
+                    widget.configure(fg_color=("#D0D0D0", "#404040"))  # Grigio chiaro/scuro per light/dark mode
+                except:
+                    pass  # Alcuni widget potrebbero non supportare fg_color
+            else:
+                # Assicurati che i campi editabili siano abilitati
+                widget.configure(state='normal')
+                try:
+                    widget.configure(fg_color=("white", "#343638"))  # Colore normale per campi editabili
+                except:
+                    pass
+        
+        # Nascondi il pulsante "Nuovo Record" e mostra il pulsante per uscire
+        self.historical_btn.pack_forget()
+        
+        # Aggiungiamo un pulsante per uscire dalla modalità storico
+        exit_historical_btn = ctk.CTkButton(self.historical_btn.master, text="❌ Esci Storico", 
+                                          command=self.disable_historical_mode, width=140, height=40,
+                                          font=ctk.CTkFont(size=14, weight="bold"),
+                                          fg_color="#dc2626", hover_color="#b91c1c")
+        exit_historical_btn.pack(side="left", padx=5)
+        self.exit_historical_btn = exit_historical_btn
+    
+    def disable_historical_mode(self):
+        """Esce dalla modalità storico e riabilita tutti i campi"""
+        self.historical_mode = False
+        
+        # Riabilita tutti i campi e ripristina i colori normali
+        for widget in self.form_widgets.values():
+            widget.configure(state='normal')
+            try:
+                widget.configure(fg_color=("white", "#343638"))  # Ripristina colore normale
+            except:
+                pass
+        
+        # Nascondi il pulsante "Esci Storico" se esiste
+        if hasattr(self, 'exit_historical_btn'):
+            self.exit_historical_btn.pack_forget()
+            delattr(self, 'exit_historical_btn')
+        
+        # Mostra di nuovo il pulsante "Nuovo Record" se siamo in modalità modifica
+        if self.editing_asset_id is not None:
+            self.historical_btn.pack(side="left", padx=5)
     
     def format_date_for_display(self, date_value):
         """Formatta le date in modo consistente per la visualizzazione (solo giorno)"""

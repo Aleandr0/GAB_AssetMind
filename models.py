@@ -17,7 +17,7 @@ class Asset:
     """
     Rappresenta un singolo asset del portfolio
     
-    Supporta tutti i tipi di asset: ETF, Azioni, Obbligazioni, Buoni del Tesoro,
+    Supporta tutti i tipi di asset: ETF, Azioni, Fondi di investimento, Buoni del Tesoro,
     PAC, Criptovalute, Liquidità, Immobiliare, Oggetti
     
     Attributi:
@@ -113,7 +113,7 @@ class PortfolioManager:
         """
         self.excel_file = excel_file
         self.categories = [
-            "ETF", "Azioni", "Obbligazioni", "Buoni del Tesoro", 
+            "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro", 
             "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
         ]
         self._initialize_excel()
@@ -195,30 +195,6 @@ class PortfolioManager:
         # Inserisce i dati dal DataFrame pulito
         for r in dataframe_to_rows(df_clean, index=False, header=True):
             ws.append(r)
-    
-    def _format_date_for_excel(self, date_value):
-        """Formatta le date per Excel (solo giorno, no ora)"""
-        if pd.isna(date_value) or date_value == "" or date_value is None:
-            return None
-            
-        try:
-            from datetime import datetime
-            
-            # Se è già una stringa in formato YYYY-MM-DD, mantienila
-            date_str = str(date_value)
-            if "-" in date_str and len(date_str.split()[0]) == 10:
-                return date_str.split()[0]  # Rimuove eventuale ora
-            
-            # Se è un timestamp pandas, convertilo
-            if isinstance(date_value, pd.Timestamp):
-                return date_value.strftime("%Y-%m-%d")
-            
-            # Prova parsing generale
-            parsed_date = pd.to_datetime(date_value)
-            return parsed_date.strftime("%Y-%m-%d")
-            
-        except (ValueError, TypeError):
-            return str(date_value).split()[0] if " " in str(date_value) else str(date_value)
         
         # Trova le colonne dei valori totali
         header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
@@ -259,6 +235,30 @@ class PortfolioManager:
         
         # Salva il file
         wb.save(self.excel_file)
+    
+    def _format_date_for_excel(self, date_value):
+        """Formatta le date per Excel (solo giorno, no ora)"""
+        if pd.isna(date_value) or date_value == "" or date_value is None:
+            return None
+            
+        try:
+            from datetime import datetime
+            
+            # Se è già una stringa in formato YYYY-MM-DD, mantienila
+            date_str = str(date_value)
+            if "-" in date_str and len(date_str.split()[0]) == 10:
+                return date_str.split()[0]  # Rimuove eventuale ora
+            
+            # Se è un timestamp pandas, convertilo
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.strftime("%Y-%m-%d")
+            
+            # Prova parsing generale
+            parsed_date = pd.to_datetime(date_value)
+            return parsed_date.strftime("%Y-%m-%d")
+            
+        except (ValueError, TypeError):
+            return str(date_value).split()[0] if " " in str(date_value) else str(date_value)
     
     def add_asset(self, asset: Asset) -> bool:
         """
@@ -439,4 +439,63 @@ class PortfolioManager:
         # Rimuove le colonne helper
         latest_records = latest_records.drop(['asset_key', 'effective_date'], axis=1)
         
+        # Ordina per ID per mantenere l'ordine di inserimento
+        latest_records = latest_records.sort_values('id').reset_index(drop=True)
+        
         return latest_records
+    
+    def get_filtered_assets(self, filters: Dict[str, Any] = None) -> pd.DataFrame:
+        """
+        Ritorna gli asset filtrati secondo i criteri specificati
+        
+        Args:
+            filters: Dizionario con i filtri da applicare
+                    {
+                        'category': str | None,
+                        'position': str | None, 
+                        'risk_level': List[int] | None,
+                        'value_range': (min, max) | None,
+                        'name_search': str | None
+                    }
+        """
+        df = self.get_current_assets_only()
+        
+        if df.empty or not filters:
+            return df
+        
+        # Filtro per categoria
+        if filters.get('category') and filters['category'] != 'All':
+            df = df[df['category'] == filters['category']]
+        
+        # Filtro per posizione (contiene testo)
+        if filters.get('position'):
+            position_text = filters['position'].lower()
+            df = df[df['position'].fillna('').str.lower().str.contains(position_text, na=False)]
+        
+        # Filtro per livello di rischio
+        if filters.get('risk_level'):
+            df = df[df['risk_level'].isin(filters['risk_level'])]
+        
+        # Filtro per range di valore
+        if filters.get('value_range'):
+            min_val, max_val = filters['value_range']
+            # Usa updated_total_value se disponibile, altrimenti created_total_value
+            df['current_value'] = df['updated_total_value'].fillna(df['created_total_value'])
+            if min_val is not None:
+                df = df[df['current_value'] >= min_val]
+            if max_val is not None:
+                df = df[df['current_value'] <= max_val]
+            df = df.drop('current_value', axis=1)
+        
+        # Filtro per nome asset (contiene testo)
+        if filters.get('name_search'):
+            name_text = filters['name_search'].lower()
+            df = df[df['asset_name'].fillna('').str.lower().str.contains(name_text, na=False)]
+        
+        return df
+    
+    def get_unique_positions(self) -> List[str]:
+        """Ritorna tutte le posizioni uniche nel portfolio"""
+        df = self.get_current_assets_only()
+        positions = df['position'].fillna('').unique()
+        return [pos for pos in positions if pos != '']
