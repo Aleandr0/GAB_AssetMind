@@ -45,6 +45,8 @@ class NavigationBar(BaseUIComponent):
         self.selected_value_label = None
         self.portfolio_selector = None
         self.current_portfolio_file = "portfolio_data.xlsx"
+        self.nav_buttons = {}  # Dizionario per tracciare i bottoni di navigazione
+        self.current_page = "Portfolio"  # Pagina attiva corrente
         
     def create_navbar(self) -> ctk.CTkFrame:
         """Crea la barra di navigazione completa"""
@@ -135,16 +137,33 @@ class NavigationBar(BaseUIComponent):
         ]
         
         for text, page in nav_buttons:
+            # Colore iniziale: attivo per Portfolio, inattivo per gli altri
+            if page == self.current_page:
+                fg_color = UIConfig.COLORS['primary']
+                hover_color = UIConfig.COLORS['primary_hover']
+            else:
+                fg_color = UIConfig.COLORS['secondary']
+                hover_color = UIConfig.COLORS['secondary_hover']
+            
             btn = ctk.CTkButton(
                 nav_buttons_frame,
                 text=text,
-                command=lambda p=page: self.trigger_callback('page_changed', p),
+                command=lambda p=page: self._on_page_changed(p),
                 **UIConfig.BUTTON_SIZES['medium'],
                 font=ctk.CTkFont(**UIConfig.FONTS['button']),
-                fg_color=UIConfig.COLORS['secondary'],
-                hover_color=UIConfig.COLORS['secondary_hover']
+                fg_color=fg_color,
+                hover_color=hover_color
             )
             btn.pack(side="left", padx=2)
+            
+            # Salva riferimento al bottone
+            self.nav_buttons[page] = btn
+    
+    def _on_page_changed(self, page: str):
+        """Gestisce il cambio di pagina e aggiorna l'evidenziazione dei bottoni"""
+        self.current_page = page
+        self.update_active_button(page)
+        self.trigger_callback('page_changed', page)
     
     def _on_portfolio_changed(self, selected_file: str):
         """Gestisce il cambio di portfolio"""
@@ -153,6 +172,28 @@ class NavigationBar(BaseUIComponent):
     def _create_new_portfolio(self):
         """Crea un nuovo portfolio"""
         self.trigger_callback('new_portfolio_requested')
+    
+    def update_active_button(self, active_page: str):
+        """Aggiorna l'evidenziazione del bottone attivo"""
+        for page, button in self.nav_buttons.items():
+            if page == active_page:
+                # Bottone attivo - colore primario
+                try:
+                    button.configure(
+                        fg_color=UIConfig.COLORS['primary'],
+                        hover_color=UIConfig.COLORS['primary_hover']
+                    )
+                except Exception as e:
+                    print(f"Errore aggiornamento bottone attivo {page}: {e}")
+            else:
+                # Bottoni inattivi - colore secondario  
+                try:
+                    button.configure(
+                        fg_color=UIConfig.COLORS['secondary'],
+                        hover_color=UIConfig.COLORS['secondary_hover']
+                    )
+                except Exception as e:
+                    print(f"Errore aggiornamento bottone inattivo {page}: {e}")
     
     def update_values(self, total_value: float, selected_value: float = 0, percentage: float = 0):
         """Aggiorna i valori visualizzati"""

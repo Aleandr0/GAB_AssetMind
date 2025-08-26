@@ -181,6 +181,10 @@ class GABAssetMind:
                 self.page_frames[page_name].pack(fill="both", expand=True)
                 self.current_page = page_name
                 
+                # Aggiorna l'evidenziazione del bottone attivo nella navbar
+                if self.navbar:
+                    self.navbar.update_active_button(page_name)
+                
                 # Refresh dei dati per pagine specifiche
                 if page_name == "Portfolio":
                     self._load_portfolio_data()
