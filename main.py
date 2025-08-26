@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from models import Asset, PortfolioManager
 import os
+import sys
+import glob
 
 # Configurazione tema dell'applicazione
 ctk.set_appearance_mode("light")  # Modalità chiara
@@ -43,8 +45,9 @@ class GABAssetMind:
         self.root.title("GAB AssetMind - Portfolio Manager")
         self.root.geometry("1200x800")
         
-        # Gestore del portfolio (interfaccia con Excel)
-        self.portfolio_manager = PortfolioManager()
+        # Gestore del portfolio (interfaccia con Excel) - inizializza con file default
+        # Il percorso completo verrà impostato dopo l'inizializzazione del sistema multi-portfolio
+        self.portfolio_manager = None
         
         # Inizializza attributi per la navigazione
         self.current_page = "Portfolio"
@@ -54,6 +57,12 @@ class GABAssetMind:
         
         # Attributi per la modifica asset
         self.editing_asset_id = None
+        
+        # Inizializza il sistema multi-portfolio prima di creare l'interfaccia
+        self.current_portfolio_file = "portfolio_data.xlsx"  # File di default
+        app_dir = self.get_application_directory()
+        default_path = os.path.join(app_dir, self.current_portfolio_file)
+        self.portfolio_manager = PortfolioManager(default_path)
         
         # Creazione interfaccia utente
         self.setup_ui()
@@ -77,8 +86,133 @@ class GABAssetMind:
         # Inizializza le pagine
         self.setup_all_pages()
         
+        # Aggiorna la lista dei portfolio disponibili
+        self.refresh_portfolio_list()
+        
         # Mostra la pagina Portfolio per default
         self.show_page("Portfolio")
+    
+    def get_application_directory(self):
+        """Ottiene la directory dell'applicazione (per .exe o script)"""
+        if hasattr(sys, '_MEIPASS'):
+            # Se eseguito come PyInstaller bundle
+            return sys._MEIPASS
+        else:
+            # Se eseguito come script Python
+            return os.path.dirname(os.path.abspath(__file__))
+    
+    def refresh_portfolio_list(self):
+        """Aggiorna la lista dei file portfolio disponibili nella directory"""
+        try:
+            app_dir = self.get_application_directory()
+            # Cerca tutti i file .xlsx nella directory dell'applicazione
+            pattern = os.path.join(app_dir, "*.xlsx")
+            excel_files = glob.glob(pattern)
+            
+            # Estrae solo i nomi dei file (senza percorso)
+            portfolio_files = [os.path.basename(f) for f in excel_files]
+            
+            # Se non ci sono file, crea quello di default
+            if not portfolio_files:
+                portfolio_files = ["portfolio_data.xlsx"]
+            
+            # Ordina alfabeticamente
+            portfolio_files.sort()
+            
+            # Aggiorna la dropdown
+            if hasattr(self, 'portfolio_selector'):
+                self.portfolio_selector.configure(values=portfolio_files)
+                # Imposta il file corrente se è nella lista
+                if self.current_portfolio_file in portfolio_files:
+                    self.portfolio_selector.set(self.current_portfolio_file)
+                elif portfolio_files:
+                    # Imposta il primo file disponibile
+                    self.current_portfolio_file = portfolio_files[0]
+                    self.portfolio_selector.set(self.current_portfolio_file)
+                    
+        except Exception as e:
+            print(f"Errore nel refresh lista portfolio: {e}")
+            # Fallback al file di default
+            if hasattr(self, 'portfolio_selector'):
+                self.portfolio_selector.configure(values=["portfolio_data.xlsx"])
+                self.portfolio_selector.set("portfolio_data.xlsx")
+    
+    def switch_portfolio(self, selected_file):
+        """Cambia il portfolio attivo"""
+        try:
+            if selected_file != self.current_portfolio_file:
+                self.current_portfolio_file = selected_file
+                
+                # Costruisce il percorso completo del file
+                app_dir = self.get_application_directory()
+                full_path = os.path.join(app_dir, selected_file)
+                
+                # Aggiorna il PortfolioManager con il nuovo file
+                self.portfolio_manager = PortfolioManager(full_path)
+                
+                # Pulisce i filtri attivi
+                if hasattr(self, 'column_filters'):
+                    self.column_filters.clear()
+                
+                # Reset visualizzazione alla modalità Asset (non Record)
+                if hasattr(self, 'show_all_records'):
+                    self.show_all_records = False
+                    if hasattr(self, 'assets_btn'):
+                        self.assets_btn.configure(fg_color="#3b82f6", hover_color="#2563eb")
+                        self.records_btn.configure(fg_color="#6b7280", hover_color="#4b5563")
+                
+                # Ricarica i dati del nuovo portfolio
+                self.load_portfolio_data()
+                
+                print(f"Cambiato portfolio a: {selected_file}")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile cambiare portfolio: {e}")
+            # Ripristina la selezione precedente
+            self.portfolio_selector.set(self.current_portfolio_file)
+    
+    def create_new_portfolio(self):
+        """Crea un nuovo portfolio con nome personalizzato"""
+        try:
+            # Dialog per il nome del nuovo portfolio
+            dialog = ctk.CTkInputDialog(text="Nome del nuovo portfolio:", title="Nuovo Portfolio")
+            portfolio_name = dialog.get_input()
+            
+            if portfolio_name:
+                # Assicura che abbia estensione .xlsx
+                if not portfolio_name.lower().endswith('.xlsx'):
+                    portfolio_name += '.xlsx'
+                
+                # Costruisce il percorso completo
+                app_dir = self.get_application_directory()
+                new_file_path = os.path.join(app_dir, portfolio_name)
+                
+                # Verifica che il file non esista già
+                if os.path.exists(new_file_path):
+                    messagebox.showerror("Errore", f"Il portfolio '{portfolio_name}' esiste già!")
+                    return
+                
+                # Crea il nuovo PortfolioManager che creerà automaticamente il file
+                new_portfolio_manager = PortfolioManager(new_file_path)
+                
+                # Aggiorna la lista e cambia al nuovo portfolio
+                self.current_portfolio_file = portfolio_name
+                self.portfolio_manager = new_portfolio_manager
+                
+                # Refresh la lista e seleziona il nuovo file
+                self.refresh_portfolio_list()
+                self.portfolio_selector.set(portfolio_name)
+                
+                # Pulisce filtri e ricarica
+                if hasattr(self, 'column_filters'):
+                    self.column_filters.clear()
+                
+                self.load_portfolio_data()
+                
+                messagebox.showinfo("Successo", f"Nuovo portfolio '{portfolio_name}' creato!")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile creare nuovo portfolio: {e}")
     
     def create_global_navbar(self):
         """Crea la barra di navigazione globale sempre visibile"""
@@ -108,6 +242,35 @@ class GABAssetMind:
                                                font=ctk.CTkFont(size=14),
                                                text_color=("#1f538d", "#14375e"))
         self.selected_value_label.pack(pady=(0, 3))
+        
+        # Container per selezione portfolio (centro-destra)
+        portfolio_section = ctk.CTkFrame(navbar_frame, fg_color="transparent")
+        portfolio_section.pack(side="left", padx=20, pady=7)
+        
+        # Label portfolio
+        portfolio_label = ctk.CTkLabel(portfolio_section, text="Portfolio:", 
+                                     font=ctk.CTkFont(size=12, weight="bold"),
+                                     text_color=("#1f538d", "#14375e"))
+        portfolio_label.pack(side="top", pady=(0, 2))
+        
+        # Container per dropdown e pulsante nuovo
+        selector_frame = ctk.CTkFrame(portfolio_section, fg_color="transparent")
+        selector_frame.pack(side="top")
+        
+        # Dropdown selezione portfolio
+        self.portfolio_selector = ctk.CTkComboBox(selector_frame, 
+                                                command=self.switch_portfolio,
+                                                width=140, height=28,
+                                                font=ctk.CTkFont(size=11))
+        self.portfolio_selector.pack(side="left", padx=(0, 5))
+        
+        # Pulsante per creare nuovo portfolio
+        new_portfolio_btn = ctk.CTkButton(selector_frame, text="+", 
+                                        command=self.create_new_portfolio,
+                                        width=30, height=28,
+                                        font=ctk.CTkFont(size=14, weight="bold"),
+                                        fg_color="#16a34a", hover_color="#15803d")
+        new_portfolio_btn.pack(side="left")
         
         # Container per i bottoni di navigazione (destra)
         nav_buttons_frame = ctk.CTkFrame(navbar_frame, fg_color="transparent")
@@ -261,6 +424,9 @@ class GABAssetMind:
         tree_container.grid_rowconfigure(0, weight=1)
         tree_container.grid_columnconfigure(0, weight=1)
         
+        # Force container geometry update
+        tree_container.update_idletasks()
+        
         # TUTTI i 20 campi del database - CAMPI IDENTIFICATIVI: Category, Position, Asset Name, ISIN
         columns = ("ID", "Category", "Position", "Asset Name", "ISIN", "Ticker", "Risk Level",
                   "Created At", "Created Amount", "Created Unit Price", "Created Total Value",
@@ -314,6 +480,10 @@ class GABAssetMind:
         self.portfolio_tree.grid(row=0, column=0, sticky="nsew")
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
+        
+        # Force the tree to be visible and update
+        self.portfolio_tree.update()
+        self.portfolio_tree.update_idletasks()
         
         # Salva riferimenti alle scrollbar per controllo dinamico
         self.v_scrollbar = v_scrollbar
@@ -389,9 +559,14 @@ class GABAssetMind:
             # Configura lo stile personalizzato
             self.tree_style.configure("Portfolio.Treeview", 
                                     font=("TkDefaultFont", new_font_size), 
-                                    rowheight=new_height)
+                                    rowheight=new_height,
+                                    background="white",
+                                    foreground="black",
+                                    fieldbackground="white")
             self.tree_style.configure("Portfolio.Treeview.Heading", 
-                                    font=("TkDefaultFont", new_font_size, "bold"))
+                                    font=("TkDefaultFont", new_font_size, "bold"),
+                                    background="#f0f0f0",
+                                    foreground="black")
             
             # Applica lo stile al TreeView
             self.portfolio_tree.configure(style="Portfolio.Treeview")
@@ -456,45 +631,55 @@ class GABAssetMind:
             print(f"Errore aggiornamento scrollbar: {e}")
     
     def setup_asset_page(self):
-        """Configura la pagina Asset (Aggiungi Asset)"""
+        """Configura la pagina Asset con menu fisso compatto"""
         frame = self.page_frames["Asset"]
         
-        # Header con titolo e bottoni
+        # Header unico con titolo e bottoni sulla stessa riga
         header_frame = ctk.CTkFrame(frame)
         header_frame.pack(fill="x", padx=10, pady=5)
         
-        # Titolo (salviamo reference per poterlo aggiornare)
-        self.asset_title_label = ctk.CTkLabel(header_frame, text="Nuovo Asset", 
-                                             font=ctk.CTkFont(size=20, weight="bold"))
-        self.asset_title_label.pack(side="left", padx=20, pady=15)
+        # Titolo a sinistra
+        self.asset_title_label = ctk.CTkLabel(header_frame, text="Gestione Asset", 
+                                             font=ctk.CTkFont(size=18, weight="bold"))
+        self.asset_title_label.pack(side="left", padx=20, pady=12)
         
-        # Bottoni Salva e Pulisci
-        button_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        button_frame.pack(side="right", padx=20, pady=15)
+        # Frame bottoni a destra, nell'ordine specificato
+        buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        buttons_frame.pack(side="right", padx=20, pady=12)
         
-        save_btn = ctk.CTkButton(button_frame, text="💾 Salva Asset", 
-                               command=self.save_new_asset, width=140, height=40,
-                               font=ctk.CTkFont(size=14, weight="bold"))
-        save_btn.pack(side="left", padx=5)
+        # 1. Pulisci Form
+        self.clear_btn = ctk.CTkButton(buttons_frame, text="🔄 Pulisci Form", 
+                                      command=self.clear_form, width=110, height=32,
+                                      font=ctk.CTkFont(size=11, weight="bold"),
+                                      fg_color="#6b7280", hover_color="#4b5563")
+        self.clear_btn.pack(side="left", padx=3)
         
-        clear_btn = ctk.CTkButton(button_frame, text="🗑️ Pulisci Form", 
-                                command=self.clear_form, width=140, height=40,
-                                font=ctk.CTkFont(size=14, weight="bold"),
-                                fg_color="#dc2626", hover_color="#b91c1c")
-        clear_btn.pack(side="left", padx=5)
+        # 2. Elimina Asset
+        self.delete_btn = ctk.CTkButton(buttons_frame, text="🗑️ Elimina Asset", 
+                                       command=self.delete_current_asset, width=110, height=32,
+                                       font=ctk.CTkFont(size=11, weight="bold"),
+                                       fg_color="#dc2626", hover_color="#b91c1c")
+        self.delete_btn.pack(side="left", padx=3)
         
-        new_btn = ctk.CTkButton(button_frame, text="🆕 Nuovo Asset", 
-                              command=self.new_asset_mode, width=140, height=40,
-                              font=ctk.CTkFont(size=14, weight="bold"),
-                              fg_color="#16a34a", hover_color="#15803d")
-        new_btn.pack(side="left", padx=5)
+        # 3. Duplica Asset (ex Copia Asset)
+        self.copy_asset_btn = ctk.CTkButton(buttons_frame, text="📋 Duplica Asset", 
+                                           command=self.copy_asset_mode, width=120, height=32,
+                                           font=ctk.CTkFont(size=11, weight="bold"),
+                                           fg_color="#0891b2", hover_color="#0e7490")
+        self.copy_asset_btn.pack(side="left", padx=4)
         
-        # Pulsante Nuovo Record (solo visibile quando c'è un asset da copiare)
-        self.historical_btn = ctk.CTkButton(button_frame, text="📈 Nuovo Record", 
-                                          command=self.create_historical_record_mode, width=140, height=40,
-                                          font=ctk.CTkFont(size=14, weight="bold"),
-                                          fg_color="#7c3aed", hover_color="#6d28d9")
-        # Inizialmente nascosto, verrà mostrato quando necessario
+        # 4. Aggiorna Valore (ex Nuovo Record)
+        self.new_record_btn = ctk.CTkButton(buttons_frame, text="📈 Aggiorna Valore", 
+                                           command=self.create_historical_record_mode, width=120, height=32,
+                                           font=ctk.CTkFont(size=11, weight="bold"),
+                                           fg_color="#7c3aed", hover_color="#6d28d9")
+        self.new_record_btn.pack(side="left", padx=4)
+        
+        # 5. Salva Asset
+        self.save_btn = ctk.CTkButton(buttons_frame, text="💾 Salva Asset", 
+                                     command=self.save_new_asset, width=120, height=32,
+                                     font=ctk.CTkFont(size=11, weight="bold"))
+        self.save_btn.pack(side="left", padx=4)
         
         # Scrollable frame per il form
         form_scroll = ctk.CTkScrollableFrame(frame)
@@ -540,6 +725,9 @@ class GABAssetMind:
         
         # Inizializza con tutti i campi abilitati (nessuna categoria selezionata inizialmente)
         self.initialize_form_fields()
+        
+        # Inizializza lo stato dei bottoni
+        self.update_asset_buttons_state()
     
     def setup_analytics_page(self):
         """Configura la pagina Grafici"""
@@ -617,16 +805,16 @@ class GABAssetMind:
             ("ISIN", "isin", None),
             ("Created At (YYYY-MM-DD)", "created_at", None),
             ("Created Amount", "created_amount", None),
-            ("Created Unit Price", "created_unit_price", None),
-            ("Created Total Value (auto)", "created_total_value", None),
+            ("Created Unit Price (€)", "created_unit_price", None),
+            ("Created Total Value (auto) (€)", "created_total_value", None),
             ("Updated At (YYYY-MM-DD)", "updated_at", None),
             ("Updated Amount", "updated_amount", None),
-            ("Updated Unit Price", "updated_unit_price", None),
-            ("Updated Total Value (auto)", "updated_total_value", None),
+            ("Updated Unit Price (€)", "updated_unit_price", None),
+            ("Updated Total Value (auto) (€)", "updated_total_value", None),
             ("Accumulation Plan", "accumulation_plan", None),
-            ("Accumulation Amount", "accumulation_amount", None),
-            ("Income Per Year", "income_per_year", None),
-            ("Rental Income", "rental_income", None),
+            ("Accumulation Amount (€)", "accumulation_amount", None),
+            ("Income Per Year (€)", "income_per_year", None),
+            ("Rental Income (€)", "rental_income", None),
             ("Note", "note", None)
         ]
         
@@ -984,8 +1172,13 @@ class GABAssetMind:
                     except (ValueError, TypeError):
                         continue
             
-            # Aggiorna l'etichetta
-            self.selected_value_label.configure(text=f"Valore selezionato: €{visible_value:,.2f}")
+            # Calcola la percentuale sul valore totale
+            summary = self.portfolio_manager.get_portfolio_summary()
+            total_value = summary.get('total_value', 0)
+            percentage = (visible_value / total_value * 100) if total_value > 0 else 0
+            
+            # Aggiorna l'etichetta con percentuale
+            self.selected_value_label.configure(text=f"Valore selezionato: €{visible_value:,.2f} ({percentage:.1f}%)")
             print(f"DEBUG: Aggiornato valore visibile: €{visible_value:,.2f} ({visible_count} righe)")
             
         except Exception as e:
@@ -997,7 +1190,8 @@ class GABAssetMind:
         try:
             summary = self.portfolio_manager.get_portfolio_summary()
             total_value = summary.get('total_value', 0)
-            self.selected_value_label.configure(text=f"Valore selezionato: €{total_value:,.2f}")
+            # Quando è selezionato tutto, la percentuale è 100%
+            self.selected_value_label.configure(text=f"Valore selezionato: €{total_value:,.2f} (100.0%)")
         except Exception as e:
             self.selected_value_label.configure(text="Valore selezionato: €0")
     
@@ -1076,8 +1270,8 @@ class GABAssetMind:
                 row['category'],  # Category
                 str(row['position']) if pd.notna(row['position']) else "-",  # Position
                 str(row['asset_name'])[:20] + "..." if len(str(row['asset_name'])) > 20 else str(row['asset_name']),  # Asset Name
-                str(row['isin']) if pd.notna(row['isin']) else "-",  # ISIN
-                str(row['ticker']) if pd.notna(row['ticker']) else "-",  # Ticker
+                str(row['isin']) if pd.notna(row['isin']) and str(row['isin']) != '' else "-",  # ISIN
+                str(row['ticker']) if pd.notna(row['ticker']) and str(row['ticker']) != '' else "-",  # Ticker
                 row['risk_level'],  # Risk Level
                 self.format_date_for_display(row['created_at']),  # Created At
                 f"{row['created_amount']:,.2f}" if pd.notna(row['created_amount']) else "0",  # Created Amount
@@ -1201,6 +1395,11 @@ class GABAssetMind:
             var.set("")
         # Riabilita tutti i campi dopo aver pulito il form
         self.initialize_form_fields()
+        # Esce dalla modalità modifica
+        self.clear_edit_mode()
+        self.disable_historical_mode()
+        # Aggiorna lo stato dei bottoni
+        self.update_asset_buttons_state()
     
     def edit_asset(self, event):
         selection = self.portfolio_tree.selection()
@@ -1212,39 +1411,17 @@ class GABAssetMind:
                 # Imposta modalità modifica
                 self.editing_asset_id = asset_id
                 
-                # Switch to Asset page and populate form
+                # Switch to Asset page
                 self.show_page("Asset")
                 
+                # POPOLA IL FORM con i dati dell'asset
+                self.populate_form_with_asset(asset)
+                
                 # Aggiorna titolo per indicare modifica
-                self.update_asset_form_title("Modifica Asset")
+                self.asset_title_label.configure(text=f"Asset ID: {asset_id} - Selezionato")
                 
-                # Mostra il pulsante "Nuovo Record" in modalità modifica
-                self.historical_btn.pack(side="left", padx=5)
-                
-                # Populate form with asset data
-                self.form_vars['category'].set(asset.category)
-                # Aggiorna campi attivi in base alla categoria
-                self.on_category_change(asset.category)
-                self.form_vars['asset_name'].set(asset.asset_name)
-                self.form_vars['position'].set(str(asset.position))
-                self.form_vars['risk_level'].set(str(asset.risk_level))
-                self.form_vars['ticker'].set(asset.ticker)
-                self.form_vars['isin'].set(asset.isin)
-                self.form_vars['created_amount'].set(str(asset.created_amount))
-                self.form_vars['created_unit_price'].set(str(asset.created_unit_price))
-                self.form_vars['updated_amount'].set(str(asset.updated_amount))
-                self.form_vars['updated_unit_price'].set(str(asset.updated_unit_price))
-                self.form_vars['accumulation_plan'].set(asset.accumulation_plan)
-                self.form_vars['accumulation_amount'].set(str(asset.accumulation_amount))
-                self.form_vars['income_per_year'].set(str(asset.income_per_year))
-                self.form_vars['rental_income'].set(str(asset.rental_income))
-                self.form_vars['note'].set(asset.note)
-                
-                # Campi data (se esistenti) - convertiti in formato standard per il form
-                if 'created_at' in self.form_vars and asset.created_at:
-                    self.form_vars['created_at'].set(self.format_date_for_form(asset.created_at))
-                if 'updated_at' in self.form_vars and asset.updated_at:
-                    self.form_vars['updated_at'].set(self.format_date_for_form(asset.updated_at))
+                # Aggiorna lo stato dei bottoni
+                self.update_asset_buttons_state()
     
     def update_asset_form_title(self, title):
         """Aggiorna il titolo del form Asset"""
@@ -1254,15 +1431,98 @@ class GABAssetMind:
     def clear_edit_mode(self):
         """Esce dalla modalità modifica e torna alla creazione nuovo asset"""
         self.editing_asset_id = None
-        self.update_asset_form_title("Nuovo Asset")
-        # Nascondi il pulsante "Nuovo Record" quando non siamo in modalità modifica
-        self.historical_btn.pack_forget()
+        self.asset_title_label.configure(text="Gestione Asset")
     
-    def new_asset_mode(self):
-        """Passa alla modalità Nuovo Asset (esce dalla modifica)"""
-        self.clear_form()
-        self.clear_edit_mode()
-        self.disable_historical_mode()
+    
+    def copy_asset_mode(self):
+        """Crea un nuovo asset copiando i dati dall'asset corrente"""
+        if self.editing_asset_id is not None:
+            # Carica l'asset corrente
+            asset = self.portfolio_manager.get_asset(self.editing_asset_id)
+            if asset:
+                # Esce dalla modalità modifica per entrare in modalità creazione nuovo asset
+                self.clear_edit_mode()
+                
+                # Popola il form con i dati esistenti (escluso ID)
+                self.populate_form_with_asset(asset)
+                
+                # Pulisce i campi che devono essere nuovi per un asset diverso
+                self.form_vars['created_at'].set("")
+                self.form_vars['updated_at'].set("")
+                self.form_vars['created_amount'].set("0")
+                self.form_vars['created_unit_price'].set("0")
+                self.form_vars['updated_amount'].set("0") 
+                self.form_vars['updated_unit_price'].set("0")
+                
+                # Abilita tutti i campi per la modifica
+                self.disable_historical_mode()
+                
+                # Aggiorna titolo e stato bottoni
+                self.asset_title_label.configure(text="Nuovo Asset (da copia)")
+                self.update_asset_buttons_state()
+                
+                messagebox.showinfo("Copia Asset", "Asset copiato! Modifica i dati e clicca 'Salva Asset' per creare un nuovo asset.")
+        else:
+            messagebox.showwarning("Avviso", "Nessun asset selezionato per la copia. Seleziona un asset dalla tabella Portfolio.")
+    
+    
+    def delete_current_asset(self):
+        """Elimina l'asset correntemente selezionato"""
+        if self.editing_asset_id is not None:
+            asset = self.portfolio_manager.get_asset(self.editing_asset_id)
+            if asset:
+                # Conferma eliminazione
+                result = messagebox.askyesno("Conferma Eliminazione", 
+                                           f"Sei sicuro di voler eliminare l'asset:\n\n"
+                                           f"ID: {asset.id}\n"
+                                           f"Categoria: {asset.category}\n" 
+                                           f"Nome: {asset.asset_name}\n"
+                                           f"Posizione: {asset.position}\n\n"
+                                           f"Questa operazione non può essere annullata.")
+                
+                if result:
+                    # Elimina l'asset
+                    success = self.portfolio_manager.delete_asset(self.editing_asset_id)
+                    if success:
+                        messagebox.showinfo("Asset Eliminato", f"Asset ID {self.editing_asset_id} eliminato con successo.")
+                        
+                        # Pulisce il form e torna alla modalità nuovo asset
+                        self.clear_form()
+                        self.clear_edit_mode()
+                        self.disable_historical_mode()
+                        
+                        # Ricarica i dati nella tabella Portfolio
+                        self.load_portfolio_data()
+                        self.update_asset_buttons_state()
+                    else:
+                        messagebox.showerror("Errore", "Impossibile eliminare l'asset. Riprova.")
+        else:
+            messagebox.showwarning("Avviso", "Nessun asset selezionato per l'eliminazione.")
+    
+    def update_asset_buttons_state(self):
+        """Aggiorna lo stato dei bottoni in base alla modalità corrente"""
+        has_selected_asset = self.editing_asset_id is not None
+        in_historical_mode = hasattr(self, 'historical_mode') and self.historical_mode
+        
+        # Bottoni sempre attivi: save_btn, clear_btn
+        
+        # Bottoni che richiedono un asset selezionato
+        if has_selected_asset:
+            self.delete_btn.configure(state="normal", fg_color="#dc2626")
+            self.copy_asset_btn.configure(state="normal", fg_color="#0891b2")
+            self.new_record_btn.configure(state="normal", fg_color="#7c3aed")
+        else:
+            self.delete_btn.configure(state="disabled", fg_color="#6b7280") 
+            self.copy_asset_btn.configure(state="disabled", fg_color="#6b7280")
+            self.new_record_btn.configure(state="disabled", fg_color="#6b7280")
+        
+        # Modifica testo e colore salva in base alla modalità
+        if in_historical_mode:
+            self.save_btn.configure(text="💾 Salva Valore", fg_color="#7c3aed")
+        elif has_selected_asset:
+            self.save_btn.configure(text="💾 Aggiorna Asset", fg_color="#f59e0b")
+        else:
+            self.save_btn.configure(text="💾 Salva Asset", fg_color="#3b82f6")
     
     def create_historical_record_mode(self):
         """Modalità creazione nuovo record storico: copia dati correnti e disabilita tutto tranne Updated Amount/Price"""
@@ -1288,23 +1548,69 @@ class GABAssetMind:
                 self.update_asset_form_title("Nuovo Record Storico")
     
     def populate_form_with_asset(self, asset):
-        """Popola il form con i dati di un asset"""
-        self.form_vars['category'].set(asset.category)
-        # Aggiorna campi attivi in base alla categoria
-        self.on_category_change(asset.category)
-        self.form_vars['asset_name'].set(asset.asset_name)
-        self.form_vars['position'].set(str(asset.position))
-        self.form_vars['risk_level'].set(str(asset.risk_level))
-        self.form_vars['ticker'].set(asset.ticker)
-        self.form_vars['isin'].set(asset.isin)
-        self.form_vars['created_amount'].set(str(asset.created_amount))
-        self.form_vars['created_unit_price'].set(str(asset.created_unit_price))
-        # NON copiamo updated_amount e updated_unit_price - l'utente deve inserirli
-        self.form_vars['accumulation_plan'].set(asset.accumulation_plan)
-        self.form_vars['accumulation_amount'].set(str(asset.accumulation_amount))
-        self.form_vars['income_per_year'].set(str(asset.income_per_year))
-        self.form_vars['rental_income'].set(str(asset.rental_income))
-        self.form_vars['note'].set(asset.note)
+        """Popola il form con i dati di un asset - COPIA DIRETTA SENZA CONTROLLI"""
+        
+        # Copia diretta di tutti i valori - se è None/NaN usa stringa vuota
+        def clean_value(value):
+            if value is None:
+                return ""
+            value_str = str(value)
+            if value_str.lower() in ['nan', 'none']:
+                return ""
+            return value_str
+        
+        # Formatta i valori monetari con simbolo euro e separatori
+        def format_currency(value):
+            if value is None:
+                return ""
+            value_str = str(value)
+            if value_str.lower() in ['nan', 'none']:
+                return ""
+            try:
+                # Converte in float e formatta come valuta
+                num_value = float(value)
+                if num_value == 0:
+                    return "€0.00"
+                return f"€{num_value:,.2f}"
+            except:
+                return value_str
+        
+        # COPIA DIRETTA tutti i campi
+        self.form_vars['category'].set(clean_value(asset.category))
+        self.form_vars['asset_name'].set(clean_value(asset.asset_name))
+        self.form_vars['position'].set(clean_value(asset.position))
+        self.form_vars['risk_level'].set(clean_value(asset.risk_level))
+        self.form_vars['ticker'].set(clean_value(asset.ticker))
+        self.form_vars['isin'].set(clean_value(asset.isin))
+        
+        # Date
+        self.form_vars['created_at'].set(clean_value(asset.created_at))
+        self.form_vars['updated_at'].set(clean_value(asset.updated_at))
+        
+        # Importi - ora senza formattazione valuta (simbolo € nelle etichette dei campi)
+        self.form_vars['created_amount'].set(clean_value(asset.created_amount))  # Quantità
+        self.form_vars['created_unit_price'].set(clean_value(asset.created_unit_price))  # Prezzo
+        
+        # Valori totali - senza formattazione valuta
+        self.form_vars['created_total_value'].set(clean_value(asset.created_total_value))
+        self.form_vars['updated_amount'].set(clean_value(asset.updated_amount))  # Quantità
+        self.form_vars['updated_unit_price'].set(clean_value(asset.updated_unit_price))  # Prezzo
+        self.form_vars['updated_total_value'].set(clean_value(asset.updated_total_value))
+        
+        # Altri campi monetari - senza formattazione valuta
+        self.form_vars['accumulation_plan'].set(clean_value(asset.accumulation_plan))
+        self.form_vars['accumulation_amount'].set(clean_value(asset.accumulation_amount))  # Importo mensile
+        self.form_vars['income_per_year'].set(clean_value(asset.income_per_year))  # Importo annuale
+        self.form_vars['rental_income'].set(clean_value(asset.rental_income))  # Importo annuale
+        self.form_vars['note'].set(clean_value(asset.note))
+        
+        # Abilita tutti i campi per visualizzazione completa
+        for widget in self.form_widgets.values():
+            widget.configure(state='normal')
+            try:
+                widget.configure(fg_color=("white", "#343638"))  # Colore normale
+            except:
+                pass
     
     def enable_historical_mode(self):
         """Disabilita tutti i campi tranne Updated Amount e Updated Unit Price"""
@@ -1437,7 +1743,8 @@ class GABAssetMind:
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
         
-        df = self.portfolio_manager.load_data()
+        # Usa solo gli asset più recenti per coerenza con Portfolio
+        df = self.portfolio_manager.get_current_assets_only()
         
         if df.empty:
             ctk.CTkLabel(self.chart_frame, text="Nessun dato disponibile per i grafici").pack(pady=50)
@@ -1448,9 +1755,11 @@ class GABAssetMind:
         current_chart = self.chart_type.get()
         
         if current_chart == "Distribuzione per Categoria":
-            category_counts = df['category'].value_counts()
-            ax.pie(category_counts.values, labels=category_counts.index, autopct='%1.1f%%')
-            ax.set_title("Distribuzione Asset per Categoria")
+            # Calcola i valori per categoria usando la stessa logica del Portfolio Summary
+            df['current_value'] = df['updated_total_value'].fillna(df['created_total_value']).fillna(0)
+            category_values = df.groupby('category')['current_value'].sum()
+            ax.pie(category_values.values, labels=category_values.index, autopct='%1.1f%%')
+            ax.set_title("Distribuzione Valore per Categoria")
             
         elif current_chart == "Distribuzione Rischio":
             risk_counts = df['risk_level'].value_counts().sort_index()

@@ -126,7 +126,7 @@ L'applicazione utilizza un file Excel (`portfolio_data.xlsx`) come database. Il 
 - **Filtri avanzati**: Click su intestazioni colonne per filtri popup con ricerca
 - **Indicatori visivi**: ★ per filtri attivi, contatori "Record nn" / "Asset mm"
 - **Controlli zoom**: Zoom tabella con scrollbar intelligenti
-- **Tracking valore**: "Valore selezionato" aggiornato real-time
+- **Tracking valore**: "Valore selezionato" con percentuale sul totale, aggiornato real-time
 - **Modifica rapida**: Doppio click per modificare asset
 
 #### 2. 📝 Asset
@@ -140,10 +140,11 @@ L'applicazione utilizza un file Excel (`portfolio_data.xlsx`) come database. Il 
 - **Feedback visuale**: Campi attivi bianchi, disabilitati grigi
 
 #### 3. 📈 Grafici  
-- **Distribuzione categorie**: Grafico a torta interattivo
+- **Distribuzione valore**: Grafico a torta con percentuali monetarie per categoria
 - **Analisi rischio**: Distribuzione per livelli di rischio
 - **Performance temporale**: Evoluzione valore nel tempo
 - **Controlli dinamici**: Selezione tipo grafico con aggiornamento istantaneo
+- **Coerenza dati**: Percentuali allineate con filtri Portfolio
 
 #### 4. 📄 Export
 - **Export CSV**: Dati completi in formato tabellare
@@ -219,6 +220,28 @@ Assicurati che matplotlib sia installato correttamente:
 ```bash
 pip install matplotlib --upgrade
 ```
+
+## 🆕 Nuove Funzionalità (Ultima Release)
+
+### 💰 Gestione Valuta Migliorata
+- ✅ **Indicatori valuta**: Simbolo € nelle etichette dei campi monetari per chiarezza
+- ✅ **Salvataggio ottimizzato**: Risolto errore di conversione con valori formattati in valuta
+- ✅ **Campi monetari identificati**: Created/Updated Unit Price, Total Value, Accumulation Amount, Income Per Year, Rental Income
+
+### 📊 Tracking Valore Avanzato
+- ✅ **Percentuale dinamica**: "Valore selezionato" mostra ora anche la percentuale sul valore totale
+- ✅ **Aggiornamento real-time**: Calcolo percentuale dinamico basato su filtri attivi
+- ✅ **Coerenza dati**: Allineamento perfetto tra filtri Portfolio e grafici Analytics
+
+### 📈 Grafici Analytics Migliorati  
+- ✅ **Distribuzione valore**: Grafico "Distribuzione per Categoria" ora calcola valori monetari invece di conteggi
+- ✅ **Consistenza dati**: Uso di asset più recenti per coerenza con visualizzazione Portfolio
+- ✅ **Percentuali accurate**: Eliminata discrepanza tra percentuali Portfolio (es. 58.8%) e Grafici (es. 60.0%)
+
+### 🔧 Ottimizzazioni Tecniche
+- ✅ **Asset correnti**: Grafici utilizzano `get_current_assets_only()` per coerenza
+- ✅ **Calcoli unificati**: Stessa logica di valore `updated_total_value.fillna(created_total_value)` ovunque
+- ✅ **Performance**: Eliminati calcoli ridondanti e migliorata velocità di aggiornamento
 
 ## 📝 Licenza
 
