@@ -152,6 +152,7 @@ class GABAssetMind:
         self.portfolio_table.register_callback('view_changed', self._on_view_changed)
         self.portfolio_table.register_callback('asset_selected', self._on_asset_selected)
         self.portfolio_table.register_callback('filter_requested', self._show_column_filter)
+        self.portfolio_table.register_callback('data_filtered', self._on_data_filtered)
         
         # Asset Form callbacks
         self.asset_form.register_callback('asset_saved', self._on_asset_saved)
@@ -381,16 +382,13 @@ class GABAssetMind:
         # Potrebbe aggiornare statistiche o log di export in futuro
     
     def _show_column_filter(self, column: str):
-        """Mostra il filtro per una colonna (implementazione futura)"""
-        messagebox.showinfo(
-            "Filtro Colonne",
-            f"Filtro per colonna '{column}' sarà implementato nella prossima versione.\n\n"
-            "Funzionalità previste:\n"
-            "• Filtro per valore specifico\n"
-            "• Filtro per range (numeri/date)\n"
-            "• Filtro per ricerca testo\n"
-            "• Combinazione di filtri multipli"
-        )
+        """Gestisce la richiesta di filtro per una colonna"""
+        # Il filtro viene gestito direttamente dal componente PortfolioTable
+        pass
+    
+    def _on_data_filtered(self, filtered_df: pd.DataFrame):
+        """Gestisce i dati filtrati aggiornando i valori della navbar"""
+        self._update_navbar_values()
     
     def run(self):
         """Avvia l'applicazione"""

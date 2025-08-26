@@ -185,6 +185,7 @@ class PortfolioTable(BaseUIComponent):
         self.show_all_records = False
         self.tree_style = None
         self.zoom_level = 100
+        self.active_filter_popup = None
         
         # Controlli UI
         self.records_btn = None
@@ -273,6 +274,19 @@ class PortfolioTable(BaseUIComponent):
             font=ctk.CTkFont(size=16, weight="bold")
         )
         zoom_in_btn.pack(side="left", padx=2)
+        
+        # Bottone pulisci filtri
+        clear_filters_btn = ctk.CTkButton(
+            zoom_frame,
+            text="🗑️ Filtri",
+            command=self.clear_all_filters,
+            width=70,
+            height=28,
+            font=ctk.CTkFont(**UIConfig.FONTS['text']),
+            fg_color=UIConfig.COLORS['warning'],
+            hover_color=UIConfig.COLORS['warning_hover']
+        )
+        clear_filters_btn.pack(side="left", padx=(10, 0))
     
     def _create_tree_view(self):
         """Crea il TreeView per la tabella"""
@@ -441,7 +455,221 @@ class PortfolioTable(BaseUIComponent):
     
     def _show_column_filter(self, column: str):
         """Mostra il filtro per una colonna specifica"""
-        self.trigger_callback('filter_requested', column)
+        try:
+            # Chiudi popup precedente se aperto
+            if hasattr(self, 'active_filter_popup') and self.active_filter_popup:
+                self.active_filter_popup.destroy()
+                self.active_filter_popup = None
+            
+            # Ottieni i dati correnti per i valori unici
+            df = self.portfolio_manager.get_current_assets_only()
+            if df.empty:
+                return
+            
+            # Converti il nome colonna display in nome DataFrame
+            from config import FieldMapping
+            db_column = FieldMapping.DISPLAY_TO_DB.get(column, column.lower().replace(' ', '_'))
+            
+            if db_column not in df.columns:
+                return
+            
+            # Ottieni valori unici per la colonna
+            unique_values = df[db_column].fillna('N/A').astype(str).unique()
+            unique_values = sorted([v for v in unique_values if v != ''])
+            
+            if not unique_values:
+                return
+            
+            # Crea popup filtro
+            self._create_filter_popup(column, db_column, unique_values)
+            
+        except Exception as e:
+            print(f"Errore nel filtro colonna {column}: {e}")
+    
+    def _create_filter_popup(self, display_column: str, db_column: str, values: list):
+        """Crea il popup per il filtro colonna"""
+        import tkinter as tk
+        from tkinter import ttk
+        
+        # Crea finestra popup
+        popup = tk.Toplevel(self.portfolio_tree)
+        popup.title(f"Filtro: {display_column}")
+        popup.geometry("300x400")
+        popup.transient(self.portfolio_tree)
+        popup.grab_set()
+        
+        # Centra il popup
+        popup.update_idletasks()
+        x = (popup.winfo_screenwidth() // 2) - (300 // 2)
+        y = (popup.winfo_screenheight() // 2) - (400 // 2)
+        popup.geometry(f"300x400+{x}+{y}")
+        
+        # Frame principale
+        main_frame = ttk.Frame(popup)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Titolo
+        title_label = ttk.Label(main_frame, text=f"Filtro per {display_column}", 
+                               font=('TkDefaultFont', 12, 'bold'))
+        title_label.pack(pady=(0, 10))
+        
+        # Campo ricerca
+        search_frame = ttk.Frame(main_frame)
+        search_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Label(search_frame, text="Ricerca:").pack(side="left")
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=search_var)
+        search_entry.pack(side="right", fill="x", expand=True, padx=(5, 0))
+        
+        # Lista valori con checkbox
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill="both", expand=True)
+        
+        # Scrollbar per la lista
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Listbox con checkboxes simulate
+        values_listbox = tk.Listbox(list_frame, selectmode="multiple", 
+                                   yscrollcommand=scrollbar.set)
+        values_listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=values_listbox.yview)
+        
+        # Popola la lista
+        for value in values:
+            values_listbox.insert("end", value)
+        
+        # Seleziona tutti per default
+        values_listbox.select_set(0, "end")
+        
+        # Ricerca in tempo reale
+        def filter_values(*args):
+            search_text = search_var.get().lower()
+            values_listbox.delete(0, "end")
+            
+            filtered_values = [v for v in values if search_text in v.lower()]
+            for value in filtered_values:
+                values_listbox.insert("end", value)
+            
+            # Riseleziona tutti i filtrati
+            values_listbox.select_set(0, "end")
+        
+        search_var.trace('w', filter_values)
+        
+        # Bottoni controllo
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(10, 0))
+        
+        def select_all():
+            values_listbox.select_set(0, "end")
+        
+        def deselect_all():
+            values_listbox.selection_clear(0, "end")
+        
+        def apply_filter():
+            # Ottieni valori selezionati
+            selected_indices = values_listbox.curselection()
+            selected_values = [values_listbox.get(i) for i in selected_indices]
+            
+            if selected_values:
+                # Applica filtro
+                self.column_filters[db_column] = set(selected_values)
+            else:
+                # Rimuovi filtro se nessun valore selezionato
+                self.column_filters.pop(db_column, None)
+            
+            # Aggiorna visualizzazione
+            self._apply_filters()
+            
+            # Aggiorna header per mostrare filtro attivo
+            self._update_column_headers()
+            
+            popup.destroy()
+            self.active_filter_popup = None
+        
+        def clear_filter():
+            # Rimuovi filtro per questa colonna
+            self.column_filters.pop(db_column, None)
+            self._apply_filters()
+            self._update_column_headers()
+            popup.destroy()
+            self.active_filter_popup = None
+        
+        # Layout bottoni
+        ttk.Button(button_frame, text="Seleziona Tutti", command=select_all).pack(side="left", padx=(0, 5))
+        ttk.Button(button_frame, text="Deseleziona", command=deselect_all).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Pulisci Filtro", command=clear_filter).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Applica", command=apply_filter).pack(side="right")
+        
+        # Chiusura popup
+        def on_close():
+            self.active_filter_popup = None
+            popup.destroy()
+        
+        popup.protocol("WM_DELETE_WINDOW", on_close)
+        self.active_filter_popup = popup
+        
+        # Focus sul campo ricerca
+        search_entry.focus_set()
+    
+    def _apply_filters(self):
+        """Applica i filtri attivi ai dati"""
+        try:
+            # Carica dati base
+            if self.show_all_records:
+                df = self.portfolio_manager.load_data()
+            else:
+                df = self.portfolio_manager.get_current_assets_only()
+            
+            # Applica filtri colonna
+            for column, filter_values in self.column_filters.items():
+                if column in df.columns and filter_values:
+                    # Converte i valori della colonna in stringa per il confronto
+                    df_values = df[column].fillna('N/A').astype(str)
+                    df = df[df_values.isin(filter_values)]
+            
+            # Aggiorna la tabella con i dati filtrati
+            self.update_data(df)
+            
+            # Notifica il cambiamento per aggiornare i valori
+            self.trigger_callback('data_filtered', df)
+            
+        except Exception as e:
+            print(f"Errore nell'applicazione filtri: {e}")
+    
+    def _update_column_headers(self):
+        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi"""
+        try:
+            # Mappa per i nomi delle colonne display -> dataframe
+            from config import FieldMapping
+            
+            for display_name, db_name in FieldMapping.DISPLAY_TO_DB.items():
+                if db_name in self.column_filters:
+                    # Mostra stella per indicare filtro attivo
+                    header_text = f"★ {display_name}"
+                else:
+                    # Intestazione normale
+                    header_text = display_name
+                
+                # Aggiorna header (se la colonna esiste)
+                try:
+                    self.portfolio_tree.heading(display_name, text=header_text)
+                except:
+                    pass  # Colonna non esistente, ignora
+                    
+        except Exception as e:
+            print(f"Errore aggiornamento headers: {e}")
+    
+    def clear_all_filters(self):
+        """Pulisce tutti i filtri attivi"""
+        self.column_filters.clear()
+        self._apply_filters()
+        self._update_column_headers()
+        
+        if hasattr(self, 'active_filter_popup') and self.active_filter_popup:
+            self.active_filter_popup.destroy()
+            self.active_filter_popup = None
     
     def update_data(self, df: pd.DataFrame):
         """Aggiorna i dati della tabella"""
