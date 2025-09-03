@@ -346,16 +346,8 @@ class AssetForm(BaseUIComponent):
             # Imposta modalità copia
             self.state.set_copy_mode(self.state.editing_asset_id)
             
-            # Popola il form con i dati esistenti
+            # Popola il form con TUTTI i dati esistenti (nessun campo svuotato)
             self.populate_form(asset)
-            
-            # Pulisce i campi che devono essere nuovi per un asset diverso
-            self.form_vars['created_at'].set("")
-            self.form_vars['updated_at'].set("")
-            self.form_vars['created_amount'].set("0")
-            self.form_vars['created_unit_price'].set("0")
-            self.form_vars['updated_amount'].set("0")
-            self.form_vars['updated_unit_price'].set("0")
             
             self._update_title()
             self._update_button_states()
@@ -399,22 +391,30 @@ class AssetForm(BaseUIComponent):
     def _save_asset(self):
         """Salva l'asset corrente"""
         try:
-            # Validazione dati
+            print(f"DEBUG: Salvataggio asset - Modalità: {self.state.mode}, ID: {self.state.editing_asset_id}")
+            
+            # Raccolta dati semplificata
             asset_data = self._collect_form_data()
             if not asset_data:
+                print("DEBUG: Raccolta dati fallita")
                 return
+            
+            print(f"DEBUG: Dati raccolti - Date: created_at='{asset_data.get('created_at')}', updated_at='{asset_data.get('updated_at')}'")
+            print(f"DEBUG: Valori numerici: created_amount={asset_data.get('created_amount')}, updated_amount={asset_data.get('updated_amount')}")
             
             # Salvataggio in base alla modalità
             success = False
             
             if self.state.mode == 'create' or self.state.mode == 'copy':
                 # Nuovo asset
+                print("DEBUG: Creazione nuovo asset")
                 asset = Asset(**asset_data)
                 success = self.portfolio_manager.add_asset(asset)
                 action = "creato"
             
             elif self.state.mode == 'edit':
-                # Modifica asset esistente
+                # Modifica asset esistente - passa direttamente i dati raccolti
+                print(f"DEBUG: Modifica asset esistente ID {self.state.editing_asset_id}")
                 success = self.portfolio_manager.update_asset(
                     self.state.editing_asset_id, 
                     asset_data
@@ -423,6 +423,7 @@ class AssetForm(BaseUIComponent):
             
             elif self.state.mode == 'historical':
                 # Nuovo record storico
+                print("DEBUG: Creazione record storico")
                 asset_data['updated_at'] = datetime.now().strftime("%Y-%m-%d")
                 asset = Asset(**asset_data)
                 success = self.portfolio_manager.add_asset(asset)
@@ -430,61 +431,70 @@ class AssetForm(BaseUIComponent):
             
             # Gestione risultato
             if success:
+                print(f"DEBUG: Salvataggio completato con successo - {action}")
                 messagebox.showinfo("Successo", f"Asset {action} con successo!")
                 self._clear_form()
                 self.trigger_callback('asset_saved', asset_data)
             else:
-                messagebox.showerror("Errore", f"Impossibile salvare l'asset: {Messages.ERRORS['save_failed']}")
+                print("DEBUG: Salvataggio fallito")
+                messagebox.showerror("Errore", f"Impossibile salvare l'asset")
         
         except Exception as e:
-            error_msg = ErrorHandler.handle_data_error(e, "salvataggio asset")
-            messagebox.showerror("Errore", error_msg)
+            print(f"DEBUG: Eccezione durante salvataggio: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Errore", f"Errore durante salvataggio: {e}")
     
     def _collect_form_data(self) -> Optional[Dict[str, Any]]:
-        """Raccoglie e valida i dati dal form"""
+        """Raccoglie i dati dal form con validazione minima"""
         try:
             data = {}
             
-            # Campi obbligatori
-            required_fields = ['category', 'asset_name']
-            for field in required_fields:
-                value = self.form_vars[field].get().strip()
-                if not value:
-                    messagebox.showerror("Errore", f"Il campo {field} è obbligatorio")
-                    return None
-                data[field] = value
+            # Campi obbligatori - controllo semplice
+            if not self.form_vars['category'].get().strip():
+                messagebox.showerror("Errore", "Il campo Categoria è obbligatorio")
+                return None
+            if not self.form_vars['asset_name'].get().strip():
+                messagebox.showerror("Errore", "Il campo Asset Name è obbligatorio")
+                return None
             
-            # Campi testuali
-            text_fields = ['position', 'ticker', 'isin', 'accumulation_plan', 'note']
-            for field in text_fields:
-                data[field] = DataValidator.clean_value(self.form_vars[field].get())
-            
-            # Campi numerici
-            numeric_fields = [
-                'risk_level', 'created_amount', 'updated_amount',
-                'created_unit_price', 'updated_unit_price',
-                'created_total_value', 'updated_total_value',
-                'accumulation_amount', 'income_per_year', 'rental_income'
+            # Raccolta DIRETTA - tutti i campi senza eccessiva validazione
+            all_fields = [
+                'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
+                'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
+                'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
+                'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
             ]
-            for field in numeric_fields:
-                value = self.form_vars[field].get().strip()
-                data[field] = DataValidator.validate_numeric(value, field)
             
-            # Campi data
-            date_fields = ['created_at', 'updated_at']
-            for field in date_fields:
+            for field in all_fields:
                 value = self.form_vars[field].get().strip()
-                data[field] = DataValidator.validate_date(value)
-            
-            # Validazione ISIN se presente
-            if data['isin']:
-                data['isin'] = DataValidator.validate_isin(data['isin'])
+                
+                # Risk level è intero
+                if field == 'risk_level':
+                    try:
+                        data[field] = int(value) if value else 1
+                    except ValueError:
+                        data[field] = 1
+                
+                # Campi numerici float
+                elif field in ['created_amount', 'updated_amount', 
+                             'created_unit_price', 'updated_unit_price', 'created_total_value', 'updated_total_value',
+                             'accumulation_amount', 'income_per_year', 'rental_income']:
+                    try:
+                        # Pulizia semplice per numerici
+                        cleaned = value.replace('€', '').replace(',', '').strip()
+                        data[field] = float(cleaned) if cleaned else 0.0
+                    except ValueError:
+                        data[field] = 0.0
+                
+                # Tutti gli altri campi: copia diretta
+                else:
+                    data[field] = value if value else ""
             
             return data
             
         except Exception as e:
-            error_msg = ErrorHandler.handle_data_error(e, "validazione dati")
-            messagebox.showerror("Errore", error_msg)
+            messagebox.showerror("Errore", f"Errore raccolta dati: {e}")
             return None
     
     def _update_title(self):
@@ -527,38 +537,45 @@ class AssetForm(BaseUIComponent):
             ))
     
     def populate_form(self, asset: Asset):
-        """Popola il form con i dati di un asset"""
-        def clean_value(value):
-            if DataValidator.is_empty(value):
-                return ""
-            return str(value).strip()
+        """Popola il form con i dati di un asset - copia diretta senza conversioni"""
         
-        # Popola tutti i campi senza formattazione valuta
-        field_mapping = {
-            'category': asset.category,
-            'asset_name': asset.asset_name,
-            'position': asset.position,
-            'risk_level': asset.risk_level,
-            'ticker': asset.ticker,
-            'isin': asset.isin,
-            'created_at': asset.created_at,
-            'created_amount': asset.created_amount,
-            'created_unit_price': asset.created_unit_price,
-            'created_total_value': asset.created_total_value,
-            'updated_at': asset.updated_at,
-            'updated_amount': asset.updated_amount,
-            'updated_unit_price': asset.updated_unit_price,
-            'updated_total_value': asset.updated_total_value,
-            'accumulation_plan': asset.accumulation_plan,
-            'accumulation_amount': asset.accumulation_amount,
-            'income_per_year': asset.income_per_year,
-            'rental_income': asset.rental_income,
-            'note': asset.note
+        # Funzione helper per conversione sicura
+        def safe_str(value):
+            if value is None or str(value).lower() in ['none', 'nan', 'na']:
+                return ""
+            return str(value)
+        
+        # Mappa diretta asset -> form (conversione sicura senza validazioni complesse)
+        field_values = {
+            'category': safe_str(asset.category),
+            'asset_name': safe_str(asset.asset_name), 
+            'position': safe_str(asset.position),
+            'risk_level': str(asset.risk_level) if asset.risk_level and asset.risk_level != 0 else "1",
+            'ticker': safe_str(asset.ticker),
+            'isin': safe_str(asset.isin),
+            'created_at': safe_str(asset.created_at),
+            'created_amount': str(asset.created_amount) if asset.created_amount is not None and asset.created_amount != 0 else "",
+            'created_unit_price': str(asset.created_unit_price) if asset.created_unit_price is not None and asset.created_unit_price != 0 else "",
+            'created_total_value': str(asset.created_total_value) if asset.created_total_value is not None and asset.created_total_value != 0 else "",
+            'updated_at': safe_str(asset.updated_at),
+            'updated_amount': str(asset.updated_amount) if asset.updated_amount is not None and asset.updated_amount != 0 else "",
+            'updated_unit_price': str(asset.updated_unit_price) if asset.updated_unit_price is not None and asset.updated_unit_price != 0 else "",
+            'updated_total_value': str(asset.updated_total_value) if asset.updated_total_value is not None and asset.updated_total_value != 0 else "",
+            'accumulation_plan': safe_str(asset.accumulation_plan),
+            'accumulation_amount': str(asset.accumulation_amount) if asset.accumulation_amount is not None and asset.accumulation_amount != 0 else "",
+            'income_per_year': str(asset.income_per_year) if asset.income_per_year is not None and asset.income_per_year != 0 else "",
+            'rental_income': str(asset.rental_income) if asset.rental_income is not None and asset.rental_income != 0 else "",
+            'note': safe_str(asset.note)
         }
         
-        for field, value in field_mapping.items():
+        # Copia diretta nei campi del form
+        for field, value in field_values.items():
             if field in self.form_vars:
-                safe_execute(lambda f=field, v=value: self.form_vars[f].set(clean_value(v)))
+                try:
+                    self.form_vars[field].set(str(value))
+                except Exception as e:
+                    print(f"Errore settaggio campo {field}: {e}")
+                    self.form_vars[field].set("")
         
         # Abilita tutti i campi per visualizzazione completa
         self._initialize_form()

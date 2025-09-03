@@ -38,9 +38,12 @@ class DataValidator:
         try:
             # Rimuove formattazione valuta se presente
             if isinstance(value, str):
-                cleaned = value.replace('€', '').replace(',', '').replace('.', '', -1)
-                if '.' in cleaned:
-                    cleaned = cleaned.replace('.', '', cleaned.count('.') - 1)
+                cleaned = value.replace('€', '').replace(',', '').strip()
+                # Non rimuovere i punti decimali - mantieni solo l'ultimo punto come separatore decimale
+                if cleaned.count('.') > 1:
+                    # Se ci sono più punti, mantieni solo l'ultimo come separatore decimale
+                    parts = cleaned.split('.')
+                    cleaned = ''.join(parts[:-1]) + '.' + parts[-1]
                 numeric_value = float(cleaned)
             else:
                 numeric_value = float(value)

@@ -327,6 +327,15 @@ class PortfolioTable(BaseUIComponent):
             hover_color=UIConfig.COLORS['warning_hover']
         )
         clear_filters_btn.pack(side="left", padx=(10, 0))
+        
+        # Testo istruzioni filtri (sulla stessa linea)
+        instruction_label = ctk.CTkLabel(
+            toggle_frame,
+            text="Click column header to filter",
+            font=ctk.CTkFont(**UIConfig.FONTS['text']),
+            text_color=UIConfig.COLORS['secondary']
+        )
+        instruction_label.pack(side="left", padx=(20, 0))
     
     def _create_tree_view(self):
         """Crea il TreeView per la tabella"""
@@ -386,19 +395,45 @@ class PortfolioTable(BaseUIComponent):
     
     def _configure_columns(self, columns: tuple):
         """Configura le colonne della tabella"""
+        # Larghezze aumentate per garantire leggibilità completa dei titoli
         column_widths = {
-            "ID": 50, "Category": 120, "Position": 100, "Asset Name": 150,
-            "ISIN": 100, "Ticker": 80, "Risk Level": 80,
-            "Created At": 100, "Created Amount": 100, "Created Unit Price": 120,
-            "Created Total Value": 130, "Updated At": 100, "Updated Amount": 100,
-            "Updated Unit Price": 120, "Updated Total Value": 130,
-            "Accumulation Plan": 150, "Accumulation Amount": 130,
-            "Income Per Year": 120, "Rental Income": 120, "Note": 200
+            "ID": 60, "Category": 120, "Position": 120, "Asset Name": 200,
+            "ISIN": 80, "Ticker": 80, "Risk Level": 120,
+            "Created At": 120, "Created Amount": 160, "Created Unit Price": 140,
+            "Created Total Value": 150, "Updated At": 120, "Updated Amount": 160,
+            "Updated Unit Price": 140, "Updated Total Value": 150,
+            "Accumulation Plan": 180, "Accumulation Amount": 180,
+            "Income Per Year": 160, "Rental Income": 140, "Note": 250
+        }
+        
+        # Titoli su una riga ma abbreviati per garantire leggibilità
+        column_headers = {
+            "ID": "ID ▼",
+            "Category": "Category ▼",
+            "Position": "Position ▼", 
+            "Asset Name": "Asset Name ▼",
+            "ISIN": "ISIN ▼",
+            "Ticker": "Ticker ▼",
+            "Risk Level": "Risk Level ▼",
+            "Created At": "Created At ▼",
+            "Created Amount": "Created Amount ▼",
+            "Created Unit Price": "Created Price ▼",
+            "Created Total Value": "Created Total ▼",
+            "Updated At": "Updated At ▼",
+            "Updated Amount": "Updated Amount ▼",
+            "Updated Unit Price": "Updated Price ▼",
+            "Updated Total Value": "Updated Total ▼",
+            "Accumulation Plan": "Accumulation Plan ▼",
+            "Accumulation Amount": "Accumulation Amount ▼",
+            "Income Per Year": "Income Per Year ▼",
+            "Rental Income": "Rental Income ▼",
+            "Note": "Note ▼"
         }
         
         for col in columns:
-            width = column_widths.get(col, 100)
-            self.portfolio_tree.heading(col, text=col, anchor="w")
+            width = column_widths.get(col, 120)
+            header_text = column_headers.get(col, f"{col}\n▼")
+            self.portfolio_tree.heading(col, text=header_text, anchor="w")
             self.portfolio_tree.column(col, width=width, anchor="w")
     
     def _setup_tree_style(self):
@@ -412,12 +447,27 @@ class PortfolioTable(BaseUIComponent):
             font=("TkDefaultFont", 9),
             rowheight=25
         )
+        
+        # Configurazione header con altezza aumentata
         self.tree_style.configure(
             "Portfolio.Treeview.Heading",
             background="#f0f0f0",
             foreground="black",
-            font=("TkDefaultFont", 9, "bold")
+            font=("TkDefaultFont", 9, "bold"),
+            relief="raised",
+            borderwidth=1,
+            # Forza altezza minima per due righe
+            minsize=50,
+            padding=[5, 15, 5, 15]  # left, top, right, bottom
         )
+        
+        # Configurazione diretta dell'altezza dell'header
+        try:
+            # Imposta altezza fissa agli header
+            self.portfolio_tree.tk.call('style', 'configure', 'Portfolio.Treeview.Heading', '-rowheight', 50)
+        except:
+            pass
+            
         self.portfolio_tree.configure(style="Portfolio.Treeview")
     
     def _toggle_to_records(self):
@@ -469,13 +519,53 @@ class PortfolioTable(BaseUIComponent):
             font=("TkDefaultFont", new_font_size),
             rowheight=new_height
         )
+        # Ricalcola altezza header con zoom
+        zoom_padding_v = max(15, int(15 * (self.zoom_level / 100)))
+        zoom_height = max(50, int(50 * (self.zoom_level / 100)))
+        
         self.tree_style.configure(
             "Portfolio.Treeview.Heading",
-            font=("TkDefaultFont", new_font_size, "bold")
+            font=("TkDefaultFont", new_font_size, "bold"),
+            padding=[5, zoom_padding_v, 5, zoom_padding_v]
         )
+        
+        # Riapplica altezza header con zoom
+        try:
+            self.portfolio_tree.tk.call('style', 'configure', 'Portfolio.Treeview.Heading', '-rowheight', zoom_height)
+        except:
+            pass
+        
+        # Auto-ridimensiona le colonne in base al contenuto con nuovo zoom
+        self._auto_resize_columns()
         
         self.zoom_label.configure(text=f"{self.zoom_level}%")
         self._update_scrollbars()
+    
+    def _update_column_widths(self):
+        """Aggiorna le larghezze delle colonne proporzionalmente al zoom"""
+        try:
+            # Larghezze base delle colonne (aggiornate per leggibilità)
+            base_column_widths = {
+                "ID": 60, "Category": 120, "Position": 120, "Asset Name": 200,
+                "ISIN": 80, "Ticker": 80, "Risk Level": 120,
+                "Created At": 120, "Created Amount": 160, "Created Unit Price": 140,
+                "Created Total Value": 150, "Updated At": 120, "Updated Amount": 160,
+                "Updated Unit Price": 140, "Updated Total Value": 150,
+                "Accumulation Plan": 180, "Accumulation Amount": 180,
+                "Income Per Year": 160, "Rental Income": 140, "Note": 250
+            }
+            
+            # Calcola il fattore di zoom
+            zoom_factor = self.zoom_level / 100
+            
+            # Aggiorna le larghezze di tutte le colonne
+            for col in self.portfolio_tree['columns']:
+                base_width = base_column_widths.get(col, 120)
+                new_width = int(base_width * zoom_factor)
+                self.portfolio_tree.column(col, width=new_width)
+                
+        except Exception as e:
+            print(f"Errore aggiornamento larghezza colonne: {e}")
     
     def _update_scrollbars(self):
         """Aggiorna la visibilità delle scrollbar"""
@@ -684,18 +774,44 @@ class PortfolioTable(BaseUIComponent):
             print(f"Errore nell'applicazione filtri: {e}")
     
     def _update_column_headers(self):
-        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi con asterisco"""
+        """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi con asterisco più grande"""
         try:
             # Mappa per i nomi delle colonne display -> dataframe
             from config import FieldMapping
             
+            # Titoli su una riga con mapping per filtri
+            column_headers_base = {
+                "ID": "ID",
+                "Category": "Category",
+                "Position": "Position", 
+                "Asset Name": "Asset Name",
+                "ISIN": "ISIN",
+                "Ticker": "Ticker",
+                "Risk Level": "Risk Level",
+                "Created At": "Created At",
+                "Created Amount": "Created Amount",
+                "Created Unit Price": "Created Price",
+                "Created Total Value": "Created Total",
+                "Updated At": "Updated At",
+                "Updated Amount": "Updated Amount",
+                "Updated Unit Price": "Updated Price",
+                "Updated Total Value": "Updated Total",
+                "Accumulation Plan": "Accumulation Plan",
+                "Accumulation Amount": "Accumulation Amount",
+                "Income Per Year": "Income Per Year",
+                "Rental Income": "Rental Income",
+                "Note": "Note"
+            }
+            
             for display_name, db_name in FieldMapping.DISPLAY_TO_DB.items():
+                base_header = column_headers_base.get(display_name, display_name)
+                
                 if db_name in self.column_filters:
-                    # Mostra asterisco per indicare filtro attivo (come nella legacy)
-                    header_text = f"{display_name} *"
+                    # Mostra asterisco doppio più visibile per indicare filtro attivo
+                    header_text = f"{base_header} ▼ **"
                 else:
-                    # Intestazione normale
-                    header_text = display_name
+                    # Intestazione normale con triangolo
+                    header_text = f"{base_header} ▼"
                 
                 # Aggiorna header (se la colonna esiste nella TreeView)
                 try:
@@ -732,7 +848,56 @@ class PortfolioTable(BaseUIComponent):
         
         # Aggiorna contatori
         self._update_button_counts(df)
+        
+        # Auto-ridimensiona le colonne in base al contenuto
+        self._auto_resize_columns()
+        
         self._update_scrollbars()
+    
+    def _auto_resize_columns(self):
+        """Auto-ridimensiona le colonne in base al contenuto (come Excel)"""
+        try:
+            import tkinter.font as tkfont
+            
+            # Font corrente per calcoli
+            current_font = tkfont.nametofont("TkDefaultFont")
+            font_size = int(9 * (self.zoom_level / 100))
+            current_font.configure(size=font_size)
+            
+            for col in self.portfolio_tree['columns']:
+                # Calcola larghezza header (su due righe)
+                header_text = self.portfolio_tree.heading(col, "text")
+                if isinstance(header_text, str):
+                    # Trova la riga più lunga nell'header
+                    header_lines = header_text.split('\n')
+                    max_header_width = max([current_font.measure(line) for line in header_lines]) if header_lines else 0
+                else:
+                    max_header_width = current_font.measure(str(header_text))
+                
+                # Calcola larghezza massima del contenuto
+                max_content_width = 0
+                for item in self.portfolio_tree.get_children():
+                    item_values = self.portfolio_tree.item(item, 'values')
+                    if item_values:
+                        col_index = list(self.portfolio_tree['columns']).index(col)
+                        if col_index < len(item_values):
+                            cell_text = str(item_values[col_index])
+                            content_width = current_font.measure(cell_text)
+                            max_content_width = max(max_content_width, content_width)
+                
+                # Larghezza finale: maggiore tra header e contenuto + padding
+                final_width = max(max_header_width, max_content_width) + 20  # 20px padding
+                
+                # Limiti min e max per evitare colonne troppo strette o troppo larghe
+                min_width = 60
+                max_width = 300
+                final_width = max(min_width, min(max_width, final_width))
+                
+                # Applica la nuova larghezza
+                self.portfolio_tree.column(col, width=final_width)
+                
+        except Exception as e:
+            print(f"Errore auto-resize colonne: {e}")
     
     def _format_row_values(self, row: pd.Series) -> tuple:
         """Formatta i valori di una riga per la visualizzazione"""
