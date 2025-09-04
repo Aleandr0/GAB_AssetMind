@@ -168,6 +168,11 @@ class GABAssetMind:
             self._load_portfolio_data,
             error_handler=lambda e: print(f"Errore caricamento iniziale: {e}")
         )
+        # Aggiorna i valori della navbar dopo il caricamento iniziale
+        safe_execute(
+            self._update_navbar_values,
+            error_handler=lambda e: print(f"Errore aggiornamento navbar iniziale: {e}")
+        )
     
     def show_page(self, page_name: str):
         """Mostra una pagina specifica nascondendo le altre"""

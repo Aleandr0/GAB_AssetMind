@@ -35,11 +35,6 @@ class FormState:
         self.editing_asset_id = asset_id
         self.historical_mode = False
     
-    def set_copy_mode(self, asset_id: int):
-        """Imposta modalità copia asset"""
-        self.mode = 'copy'
-        self.editing_asset_id = asset_id
-        self.historical_mode = False
     
     def set_historical_mode(self, asset_id: int):
         """Imposta modalità creazione record storico"""
@@ -56,7 +51,6 @@ class FormState:
         titles = {
             'create': 'Gestione Asset',
             'edit': f'Asset ID: {self.editing_asset_id} - Selezionato',
-            'copy': 'Nuovo Asset (da copia)',
             'historical': f'Nuovo Record - Asset ID: {self.editing_asset_id}'
         }
         return titles.get(self.mode, 'Gestione Asset')
@@ -336,25 +330,44 @@ class AssetForm(BaseUIComponent):
                 messagebox.showerror("Errore", "Impossibile eliminare l'asset. Riprova.")
     
     def _copy_asset(self):
-        """Crea un nuovo asset copiando i dati dall'asset corrente"""
+        """Duplica l'asset corrente nella prima posizione libera e mantiene il form attivo"""
         if not self.state.is_editing():
             messagebox.showwarning("Avviso", Messages.WARNINGS['no_asset_selected'])
             return
         
-        asset = self.portfolio_manager.get_asset(self.state.editing_asset_id)
-        if asset:
-            # Imposta modalità copia
-            self.state.set_copy_mode(self.state.editing_asset_id)
+        try:
+            # 1. Carica record in memoria
+            asset = self.portfolio_manager.get_asset(self.state.editing_asset_id)
+            if not asset:
+                messagebox.showwarning("Avviso", Messages.WARNINGS['no_asset_selected'])
+                return
             
-            # Popola il form con TUTTI i dati esistenti (nessun campo svuotato)
-            self.populate_form(asset)
+            # 2. Prepara i dati per la duplicazione
+            asset_data = asset.to_dict()
             
-            self._update_title()
-            self._update_button_states()
+            # 3. Trova prima posizione libera
+            df = self.portfolio_manager.load_data()
+            next_id = len(df) + 1 if not df.empty else 1
+            asset_data['id'] = next_id
             
-            messagebox.showinfo("Copia Asset", Messages.SUCCESS['asset_copied'])
-        else:
-            messagebox.showwarning("Avviso", Messages.WARNINGS['no_asset_selected'])
+            # 4. Riscrive nella prima posizione libera
+            new_asset = Asset(**asset_data)
+            success = self.portfolio_manager.add_asset(new_asset)
+            
+            if success:
+                # 5. Mantiene il form attivo sul nuovo asset per modifiche
+                self.state.set_edit_mode(next_id)
+                self.populate_form(new_asset)
+                self._update_title()
+                self._update_button_states()
+                
+                messagebox.showinfo("Successo", f"Asset duplicato con ID {next_id}. Puoi modificarlo ora.")
+                self.trigger_callback('asset_saved', asset_data)
+            else:
+                messagebox.showerror("Errore", "Impossibile duplicare l'asset")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore durante duplicazione: {e}")
     
     def _create_historical_record(self):
         """Crea un record storico per l'asset corrente"""
@@ -405,7 +418,7 @@ class AssetForm(BaseUIComponent):
             # Salvataggio in base alla modalità
             success = False
             
-            if self.state.mode == 'create' or self.state.mode == 'copy':
+            if self.state.mode == 'create':
                 # Nuovo asset
                 print("DEBUG: Creazione nuovo asset")
                 asset = Asset(**asset_data)
