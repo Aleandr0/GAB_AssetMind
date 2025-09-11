@@ -11,6 +11,8 @@ import pandas as pd
 from typing import Optional, Dict, Any
 import numpy as np
 
+# Nessuna dipendenza da scipy - uso interpolazione semplice con numpy
+
 from config import UIConfig
 from utils import ErrorHandler, safe_execute
 from models import PortfolioManager
@@ -19,12 +21,16 @@ from ui_components import BaseUIComponent
 class ChartsUI(BaseUIComponent):
     """Componente per la visualizzazione di grafici e analytics"""
     
+    
     def __init__(self, parent, portfolio_manager: PortfolioManager):
         super().__init__(parent, portfolio_manager)
         self.charts_frame = None
         self.chart_frame = None
         self.chart_type = None
         self.current_chart = None
+        self.start_year = None
+        self.end_year = None
+        self.available_years = []
         
         # Configurazione matplotlib per CustomTkinter
         plt.style.use('default')
@@ -96,6 +102,47 @@ class ChartsUI(BaseUIComponent):
             hover_color=UIConfig.COLORS['primary_hover']
         )
         refresh_btn.pack(side="left", padx=10, pady=15)
+        
+        # Controlli temporali (inizialmente nascosti)
+        # Label Anno Iniziale
+        self.start_year_label = ctk.CTkLabel(
+            controls_frame,
+            text="Dal:",
+            font=ctk.CTkFont(**UIConfig.FONTS['text'])
+        )
+        
+        # Dropdown anno iniziale
+        self.start_year = ctk.StringVar()
+        self.start_year_selector = ctk.CTkComboBox(
+            controls_frame,
+            variable=self.start_year,
+            command=self._on_temporal_range_changed,
+            width=80,
+            font=ctk.CTkFont(**UIConfig.FONTS['text'])
+        )
+        
+        # Label Anno Finale
+        self.end_year_label = ctk.CTkLabel(
+            controls_frame,
+            text="Al:",
+            font=ctk.CTkFont(**UIConfig.FONTS['text'])
+        )
+        
+        # Dropdown anno finale
+        self.end_year = ctk.StringVar()
+        self.end_year_selector = ctk.CTkComboBox(
+            controls_frame,
+            variable=self.end_year,
+            command=self._on_temporal_range_changed,
+            width=80,
+            font=ctk.CTkFont(**UIConfig.FONTS['text'])
+        )
+        
+        # Inizialmente nascosti
+        self.temporal_controls = [
+            self.start_year_label, self.start_year_selector,
+            self.end_year_label, self.end_year_selector
+        ]
     
     def _create_chart_area(self):
         """Crea l'area per la visualizzazione dei grafici"""
@@ -104,7 +151,74 @@ class ChartsUI(BaseUIComponent):
     
     def _on_chart_type_changed(self, selected_type: str):
         """Gestisce il cambio di tipo di grafico"""
+        print(f"DEBUG: Cambio grafico a: {selected_type}")
+        
+        # Mostra/nascondi controlli temporali
+        if selected_type == "Evoluzione Temporale":
+            print("DEBUG: Mostrando controlli temporali")
+            self._setup_temporal_controls()
+            # Mostra i controlli sulla stessa riga
+            self.start_year_label.pack(side="left", padx=(20, 5), pady=15)
+            self.start_year_selector.pack(side="left", padx=(0, 10), pady=15)
+            self.end_year_label.pack(side="left", padx=(10, 5), pady=15)
+            self.end_year_selector.pack(side="left", padx=(0, 10), pady=15)
+            print("DEBUG: Controlli temporali mostrati")
+        else:
+            print("DEBUG: Nascondendo controlli temporali")
+            # Nascondi i controlli temporali
+            for control in self.temporal_controls:
+                control.pack_forget()
+        
         self._update_chart()
+    
+    def _on_temporal_range_changed(self, value):
+        """Gestisce il cambio del range temporale"""
+        self._update_chart()
+    
+    def _setup_temporal_controls(self):
+        """Configura i controlli per la selezione del range temporale"""
+        try:
+            # Carica tutti i dati per determinare il range disponibile
+            all_data = self.portfolio_manager.load_data()
+            if all_data.empty:
+                return
+            
+            # Estrai tutti gli anni disponibili
+            created_dates = []
+            updated_dates = []
+            
+            for date_str in all_data['created_at'].dropna():
+                parsed = self._parse_single_date(date_str)
+                if pd.notna(parsed):
+                    created_dates.append(parsed)
+            
+            for date_str in all_data['updated_at'].dropna():
+                parsed = self._parse_single_date(date_str)
+                if pd.notna(parsed):
+                    updated_dates.append(parsed)
+            
+            all_dates = created_dates + updated_dates
+            if not all_dates:
+                return
+            
+            # Estrai anni unici e ordinali
+            years = sorted(set([d.year for d in all_dates]))
+            self.available_years = [str(year) for year in years]
+            
+            # Aggiorna i dropdown
+            if hasattr(self, 'start_year_selector'):
+                self.start_year_selector.configure(values=self.available_years)
+            if hasattr(self, 'end_year_selector'):
+                self.end_year_selector.configure(values=self.available_years)
+            
+            # Imposta valori default se non già impostati
+            if not self.start_year.get() or self.start_year.get() not in self.available_years:
+                self.start_year.set(self.available_years[0])
+            if not self.end_year.get() or self.end_year.get() not in self.available_years:
+                self.end_year.set(self.available_years[-1])
+                
+        except Exception as e:
+            print(f"Errore nella configurazione controlli temporali: {e}")
     
     def _update_chart(self):
         """Aggiorna il grafico corrente"""
@@ -145,6 +259,18 @@ class ChartsUI(BaseUIComponent):
             # Filtra categorie con valore > 0
             category_values = category_values[category_values > 0]
             
+            # Ordina le categorie secondo l'ordine specificato
+            category_order = ['Immobiliare', 'Titoli di stato', 'Fondi di investimento', 'Liquidità', 'Criptovalute', 'ETF', 'PAC']
+            
+            # Riordina mantenendo solo le categorie presenti nei dati
+            ordered_categories = [cat for cat in category_order if cat in category_values.index]
+            # Aggiungi eventuali categorie non nell'ordine specificato
+            for cat in category_values.index:
+                if cat not in ordered_categories:
+                    ordered_categories.append(cat)
+            
+            category_values = category_values.reindex(ordered_categories)
+            
             if category_values.empty:
                 self._show_no_data_message("Nessun valore da visualizzare")
                 return
@@ -155,28 +281,46 @@ class ChartsUI(BaseUIComponent):
             # Colori personalizzati
             colors = plt.cm.Set3(np.linspace(0, 1, len(category_values)))
             
+            # Calcola le percentuali per la legenda
+            total_value = category_values.sum()
+            percentages = (category_values / total_value * 100).round(2)
+            
             wedges, texts, autotexts = ax.pie(
                 category_values.values,
                 labels=category_values.index,
-                autopct='%1.1f%%',
+                autopct='%1.2f%%',
                 colors=colors,
                 startangle=90,
-                textprops={'fontsize': 10}
+                textprops={'fontsize': 10},
+                pctdistance=0.7  # Posiziona le percentuali più vicino al centro
             )
             
-            # Migliora l'aspetto del testo
-            for autotext in autotexts:
+            # Migliora l'aspetto del testo e sfasa le percentuali lungo il raggio
+            for i, (autotext, wedge) in enumerate(zip(autotexts, wedges)):
                 autotext.set_color('black')
                 autotext.set_weight('bold')
+                
+                # Calcola l'angolo del wedge per sfasare la percentuale
+                angle = (wedge.theta2 + wedge.theta1) / 2
+                
+                # Sfasa la distanza radiale in base all'indice per evitare sovrapposizioni
+                base_distance = 0.6  # Più vicino al centro
+                offset = (i % 3) * 0.08  # Offset più piccolo
+                pct_distance = base_distance + offset
+                
+                # Calcola nuova posizione
+                x = pct_distance * np.cos(np.radians(angle))
+                y = pct_distance * np.sin(np.radians(angle))
+                autotext.set_position((x, y))
             
             ax.set_title("Distribuzione Valore per Categoria", 
                         fontsize=14, fontweight='bold', pad=20)
             
-            # Aggiungi legenda con valori
-            legend_labels = [f"{cat}: €{val:,.0f}" 
+            # Aggiungi legenda con percentuali, nomi e valori
+            legend_labels = [f"{percentages[cat]:.2f}% - {cat}: €{val:,.0f}" 
                            for cat, val in category_values.items()]
             ax.legend(wedges, legend_labels, title="Categorie", 
-                     loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+                     loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1))
             
             self._display_chart(fig)
             
@@ -387,12 +531,26 @@ class ChartsUI(BaseUIComponent):
             all_dates = sorted(set(created_dates.tolist() + updated_dates.tolist()))
             all_dates = [d for d in all_dates if not pd.isna(d)]
             
+            # Applica filtro temporale se specificato
+            if self.start_year.get() and self.end_year.get():
+                start_year_int = int(self.start_year.get())
+                end_year_int = int(self.end_year.get())
+                
+                # Filtra le date nel range selezionato
+                filtered_dates = []
+                for date in all_dates:
+                    if start_year_int <= date.year <= end_year_int:
+                        filtered_dates.append(date)
+                
+                all_dates = filtered_dates
+                print(f"DEBUG: Filtro temporale applicato: {start_year_int}-{end_year_int}")
+            
             print(f"DEBUG: Date univoche totali: {len(all_dates)}")
             print(f"DEBUG: Prima data: {all_dates[0] if all_dates else 'N/A'}")
             print(f"DEBUG: Ultima data: {all_dates[-1] if all_dates else 'N/A'}")
             
             if not all_dates:
-                self._show_no_data_message("Nessuna data valida trovata")
+                self._show_no_data_message("Nessuna data valida trovata nel range selezionato")
                 return
             
             # 2. CALCOLO PATRIMONIO PER OGNI DATA E CATEGORIA
@@ -466,8 +624,8 @@ class ChartsUI(BaseUIComponent):
             chart_data = pd.DataFrame(timeline_data).T
             chart_data = chart_data.fillna(0)
             
-            # 4. CREAZIONE DEL GRAFICO
-            fig, ax = plt.subplots(figsize=(14, 8))
+            # 4. CREAZIONE DEL GRAFICO - Dimensioni maggiori per il zoom
+            fig, ax = plt.subplots(figsize=(16, 10))
             
             # Pulisci l'asse per evitare sovrapposizioni
             ax.clear()
@@ -475,7 +633,7 @@ class ChartsUI(BaseUIComponent):
             # Colori per le categorie
             colors = plt.cm.Set3(np.linspace(0, 1, len(categories)))
             
-            # Una linea per ogni categoria
+            # Una linea curva per ogni categoria
             lines_added = []
             for i, category in enumerate(categories):
                 if category in chart_data.columns:
@@ -484,12 +642,31 @@ class ChartsUI(BaseUIComponent):
                     category_data = category_data[category_data > 0]
                     
                     if len(category_data) > 0:
-                        line = ax.plot(category_data.index, category_data.values, 
-                                     marker='o', label=category, color=colors[i], 
-                                     linewidth=2, markersize=4)
+                        # Linee con smoothing semplice usando interpolazione lineare con più punti
+                        if len(category_data) > 2:
+                            # Aggiungi punti intermedi per smoothing visivo semplice
+                            x_dates = category_data.index
+                            y_values = category_data.values
+                            
+                            # Linea semplice con interpolazione numpy
+                            ax.plot(x_dates, y_values, 
+                                   color=colors[i], linewidth=2.5, alpha=0.9, label=category,
+                                   antialiased=True, marker='o', markersize=6)
+                            
+                            # Markers sui punti originali
+                            ax.scatter(x_dates, y_values, color=colors[i], s=40, zorder=5,
+                                     edgecolors='white', linewidths=1.5, alpha=1.0)
+                        else:
+                            # Linea normale per pochi punti
+                            ax.plot(category_data.index, category_data.values, 
+                                   marker='o', label=category, color=colors[i], 
+                                   linewidth=2.5, markersize=5, alpha=0.9,
+                                   markerfacecolor=colors[i], markeredgecolor='white', markeredgewidth=1,
+                                   antialiased=True)
+                        
                         lines_added.append(f"Categoria: {category}")
             
-            # UNA SOLA linea del totale
+            # UNA SOLA linea curva del totale
             total_values = chart_data.sum(axis=1)
             # Mostra totale solo dove c'è almeno una categoria con valore
             total_values = total_values[total_values > 0]
@@ -500,9 +677,27 @@ class ChartsUI(BaseUIComponent):
             print(f"  - Valore finale totale: €{total_values.iloc[-1]:,.2f}" if len(total_values) > 0 else "  - Nessun valore totale")
             
             if len(total_values) > 0:
-                ax.plot(total_values.index, total_values.values, 
-                       marker='s', label='TOTALE', color='black', 
-                       linewidth=3, markersize=6)
+                # Linea del totale semplice
+                if len(total_values) > 2:
+                    x_dates_total = total_values.index
+                    y_values_total = total_values.values
+                    
+                    # Disegna linea totale semplice
+                    ax.plot(x_dates_total, y_values_total, 
+                           color='black', linewidth=3.5, alpha=0.9, label='TOTALE',
+                           antialiased=True, marker='s', markersize=8)
+                    
+                    # Markers sui punti originali del totale
+                    ax.scatter(x_dates_total, y_values_total, color='black', s=60, marker='s', zorder=10,
+                             edgecolors='white', linewidths=2, alpha=1.0)
+                else:
+                    # Linea normale per pochi punti
+                    ax.plot(total_values.index, total_values.values, 
+                           marker='s', label='TOTALE', color='black', 
+                           linewidth=3.5, markersize=7, alpha=0.9,
+                           markerfacecolor='black', markeredgecolor='white', markeredgewidth=1.5,
+                           antialiased=True)
+                
                 lines_added.append("TOTALE")
             
             print(f"  - Linee totali nel grafico: {lines_added}")
@@ -512,14 +707,31 @@ class ChartsUI(BaseUIComponent):
             ax.set_xlabel('Anno', fontsize=12)
             ax.set_ylabel('Valore (€)', fontsize=12)
             
-            # Tutti gli anni interi sull'asse X
+            # Seleziona solo primo, ultimo e anni pari per evitare sovrapposizioni
             years = sorted(set([d.year for d in dates]))
             if len(years) > 0:
-                # Genera tutti gli anni dal primo all'ultimo
-                year_range = list(range(min(years), max(years) + 1))
-                year_dates = [pd.Timestamp(f'{year}-01-01') for year in year_range]
+                # Determina quali anni mostrare: primo, ultimo e anni pari
+                first_year = min(years)
+                last_year = max(years)
+                
+                display_years = [first_year]  # Sempre il primo anno
+                
+                # Genera tutti gli anni pari nell'intervallo completo (non solo quelli presenti nei dati)
+                for year in range(first_year, last_year + 1):
+                    if year % 2 == 0 and year != first_year:
+                        display_years.append(year)
+                
+                # Sempre l'ultimo anno (se non già presente)
+                if last_year not in display_years:
+                    display_years.append(last_year)
+                
+                # Ordina gli anni da mostrare
+                display_years = sorted(set(display_years))
+                
+                # Crea i tick e le etichette
+                year_dates = [pd.Timestamp(f'{year}-01-01') for year in display_years]
                 ax.set_xticks(year_dates)
-                ax.set_xticklabels(year_range)
+                ax.set_xticklabels(display_years)
                 
                 # Assicurati che tutti i tick siano visibili
                 ax.tick_params(axis='x', rotation=0)

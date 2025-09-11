@@ -76,6 +76,9 @@ class GABAssetMind:
         self._setup_ui()
         self._setup_callbacks()
         self._load_initial_data()
+        
+        # Centra la finestra dopo aver configurato tutto
+        self._center_window()
     
     def _initialize_portfolio_system(self):
         """Inizializza il sistema di gestione portfolio"""
@@ -228,6 +231,8 @@ class GABAssetMind:
         except Exception as e:
             error_msg = ErrorHandler.handle_data_error(e, "caricamento portfolio")
             print(f"Errore caricamento dati: {error_msg}")
+            import traceback
+            traceback.print_exc()
     
     def _update_navbar_values(self):
         """Aggiorna i valori mostrati nella navbar"""
@@ -398,6 +403,25 @@ class GABAssetMind:
     def _on_data_filtered(self, filtered_df: pd.DataFrame):
         """Gestisce i dati filtrati aggiornando i valori della navbar"""
         self._update_navbar_values()
+    
+    def _center_window(self):
+        """Centra la finestra al centro dello schermo"""
+        self.root.update_idletasks()
+        
+        # Usa direttamente le dimensioni della configurazione
+        window_width = 1200
+        window_height = 800
+        
+        # Ottieni le dimensioni dello schermo
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Calcola la posizione per centrare la finestra
+        x = (screen_width // 2) - (window_width // 2)
+        y = (screen_height // 2) - (window_height // 2)
+        
+        # Imposta la posizione della finestra
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
     
     def run(self):
         """Avvia l'applicazione"""
