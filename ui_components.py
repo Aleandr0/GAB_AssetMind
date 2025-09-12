@@ -328,6 +328,30 @@ class PortfolioTable(BaseUIComponent):
         )
         clear_filters_btn.pack(side="left", padx=(10, 0))
         
+        # Pulsante Riordino 
+        sort_btn = ctk.CTkButton(
+            toggle_frame,
+            text="📊 Riordino",
+            command=self._sort_records,
+            **UIConfig.BUTTON_SIZES['medium'],
+            font=ctk.CTkFont(**UIConfig.FONTS['button']),
+            fg_color=UIConfig.COLORS['info'],
+            hover_color=UIConfig.COLORS['info_hover']
+        )
+        sort_btn.pack(side="left", padx=(10, 0))
+        
+        # Pulsante Colora Storici 
+        color_btn = ctk.CTkButton(
+            toggle_frame,
+            text="🎨 Colora Storici",
+            command=self._color_historical_records,
+            **UIConfig.BUTTON_SIZES['medium'],
+            font=ctk.CTkFont(**UIConfig.FONTS['button']),
+            fg_color=UIConfig.COLORS['success'],
+            hover_color=UIConfig.COLORS['success_hover']
+        )
+        color_btn.pack(side="left", padx=(10, 0))
+        
         # Testo istruzioni filtri (sulla stessa linea)
         instruction_label = ctk.CTkLabel(
             toggle_frame,
@@ -448,6 +472,16 @@ class PortfolioTable(BaseUIComponent):
             rowheight=25
         )
         
+        # Stile per record storici (azzurro)
+        self.tree_style.configure(
+            "Historical.Treeview",
+            background="white",
+            foreground="#0066CC",  # Azzurro
+            fieldbackground="white",
+            font=("TkDefaultFont", 9),
+            rowheight=25
+        )
+        
         # Configurazione header con altezza aumentata
         self.tree_style.configure(
             "Portfolio.Treeview.Heading",
@@ -481,6 +515,8 @@ class PortfolioTable(BaseUIComponent):
             fg_color=UIConfig.COLORS['secondary'],
             hover_color=UIConfig.COLORS['secondary_hover']
         )
+        # Ricarica i dati per la nuova vista
+        self._apply_filters()
         self.trigger_callback('view_changed', 'records')
     
     def _toggle_to_assets(self):
@@ -494,6 +530,8 @@ class PortfolioTable(BaseUIComponent):
             fg_color=UIConfig.COLORS['secondary'],
             hover_color=UIConfig.COLORS['secondary_hover']
         )
+        # Ricarica i dati per la nuova vista
+        self._apply_filters()
         self.trigger_callback('view_changed', 'assets')
     
     def _zoom_in(self):
@@ -594,8 +632,11 @@ class PortfolioTable(BaseUIComponent):
                 self.active_filter_popup.destroy()
                 self.active_filter_popup = None
             
-            # Ottieni i dati correnti per i valori unici
-            df = self.portfolio_manager.get_current_assets_only()
+            # Ottieni i dati appropriati per i valori unici
+            if self.show_all_records:
+                df = self.portfolio_manager.load_data()
+            else:
+                df = self.portfolio_manager.get_current_assets_only()
             if df.empty:
                 return
             
@@ -841,10 +882,25 @@ class PortfolioTable(BaseUIComponent):
         if df.empty:
             return
         
-        # Inserisce i nuovi dati
+        # Identifica i record storici se stiamo mostrando tutti i record
+        historical_ids = set()
+        if self.show_all_records:
+            current_df = self.portfolio_manager.get_current_assets_only()
+            current_ids = set(current_df['id'].astype(int))
+            all_ids = set(df['id'].astype(int))
+            historical_ids = all_ids - current_ids
+        
+        # Inserisce i nuovi dati con colorazione appropriata
         for _, row in df.iterrows():
             values = self._format_row_values(row)
-            self.portfolio_tree.insert("", "end", values=values)
+            item_id = self.portfolio_tree.insert("", "end", values=values)
+            
+            # Colora di azzurro i record storici
+            if int(row['id']) in historical_ids:
+                self.portfolio_tree.item(item_id, tags=('historical',))
+        
+        # Configura il tag per record storici
+        self.portfolio_tree.tag_configure('historical', foreground='#0066CC')
         
         # Aggiorna contatori
         self._update_button_counts(df)
@@ -954,3 +1010,104 @@ class PortfolioTable(BaseUIComponent):
                     continue
         
         return visible_value, visible_count
+    
+    def _sort_records(self):
+        """Riordina i record del file Excel per categoria, posizione, nome asset, ISIN e data update"""
+        try:
+            # Conferma utente
+            result = messagebox.askyesno(
+                "Riordino Record", 
+                "Vuoi riordinare tutti i record del file Excel?\n\n"
+                "I record verranno ordinati per:\n"
+                "1. Categoria\n"
+                "2. Posizione\n"
+                "3. Nome Asset\n"
+                "4. ISIN\n"
+                "5. Data Update\n\n"
+                "Questa operazione modificherà permanentemente il file Excel."
+            )
+            
+            if not result:
+                return
+            
+            # Carica tutti i dati dal file Excel
+            import pandas as pd
+            df = pd.read_excel(self.portfolio_manager.excel_file)
+            
+            if df.empty:
+                messagebox.showinfo("Info", "Nessun record da riordinare.")
+                return
+            
+            print(f"DEBUG: Riordinamento di {len(df)} record...")
+            
+            # Converte le date in formato datetime per ordinamento corretto
+            for date_col in ['updated_at', 'created_at']:
+                if date_col in df.columns:
+                    df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+            
+            # Riordina i record secondo l'ordine specificato
+            # Usa fillna per gestire valori mancanti nell'ordinamento
+            df_sorted = df.sort_values(
+                by=['category', 'position', 'asset_name', 'isin', 'updated_at'],
+                na_position='last',
+                ascending=True
+            ).copy()
+            
+            print(f"DEBUG: Record riordinati con successo")
+            print(f"  - Primi 3 record ordinati:")
+            for i, row in df_sorted.head(3).iterrows():
+                print(f"    {row.get('category', 'N/A')} | {row.get('position', 'N/A')} | {row.get('asset_name', 'N/A')} | {row.get('updated_at', 'N/A')}")
+            
+            # Salva il file Excel riordinato
+            df_sorted.to_excel(self.portfolio_manager.excel_file, index=False)
+            
+            # Ricarica i dati nell'applicazione
+            self.trigger_callback('data_changed')
+            
+            messagebox.showinfo(
+                "Riordino Completato", 
+                f"Record riordinati con successo!\n\n"
+                f"Totale record: {len(df_sorted)}\n"
+                f"File aggiornato: {self.portfolio_manager.excel_file}"
+            )
+            
+            print(f"DEBUG: File Excel aggiornato e ricaricato")
+            
+        except Exception as e:
+            error_msg = ErrorHandler.handle_file_error(e, "riordino record")
+            messagebox.showerror("Errore Riordino", f"Errore durante il riordino:\n\n{error_msg}")
+            print(f"Errore riordino record: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _color_historical_records(self):
+        """Colora i record storici di azzurro nel file Excel"""
+        try:
+            # Conferma utente
+            result = messagebox.askyesno(
+                "Colora Record Storici", 
+                "Vuoi colorare i record storici di azzurro nel file Excel?\n\n"
+                "I record storici sono quelli che non rappresentano più\n"
+                "lo stato attuale di un asset (sostituiti da versioni più recenti).\n\n"
+                "Questa operazione modificherà permanentemente il file Excel."
+            )
+            
+            if not result:
+                return
+            
+            # Esegui la colorazione
+            self.portfolio_manager.color_historical_records()
+            
+            messagebox.showinfo(
+                "Colorazione Completata", 
+                "I record storici sono stati colorati di azzurro!\n\n"
+                "Riapri il file Excel per vedere le modifiche."
+            )
+            
+        except Exception as e:
+            from utils import ErrorHandler
+            error_msg = ErrorHandler.handle_file_error(e, "colorazione record storici")
+            messagebox.showerror("Errore Colorazione", f"Errore durante la colorazione:\n\n{error_msg}")
+            print(f"Errore colorazione record storici: {e}")
+            import traceback
+            traceback.print_exc()

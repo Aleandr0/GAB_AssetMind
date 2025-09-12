@@ -439,6 +439,9 @@ class PortfolioManager:
                           df['position'].fillna('') + '|' + 
                           df['isin'].fillna(''))
         
+        # Mantiene l'indice originale per preservare l'ordine del file Excel
+        df['original_order'] = df.index
+        
         # Converte date per ordinamento
         df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
                                             format='%Y-%m-%d', errors='coerce')
@@ -446,12 +449,14 @@ class PortfolioManager:
         # Prende solo il record più recente per ogni asset
         latest_records = df.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
         
+        # Riordina secondo l'ordine originale del file Excel
+        latest_records = latest_records.sort_values('original_order')
+        
         # Rimuove le colonne helper
-        latest_records = latest_records.drop(['asset_key', 'effective_date'], axis=1)
+        latest_records = latest_records.drop(['asset_key', 'effective_date', 'original_order'], axis=1)
         
-        # Ordina per ID per mantenere l'ordine di inserimento
-        latest_records = latest_records.sort_values('id').reset_index(drop=True)
-        
+        # Mantiene l'ordine del file Excel originale (non riordina per ID)
+        # L'ordine deve essere quello impostato nel file dopo il riordino
         return latest_records
     
     def get_filtered_assets(self, filters: Dict[str, Any] = None) -> pd.DataFrame:
@@ -509,3 +514,64 @@ class PortfolioManager:
         df = self.get_current_assets_only()
         positions = df['position'].fillna('').unique()
         return [pos for pos in positions if pos != '']
+    
+    def color_historical_records(self):
+        """
+        Colora i record storici di azzurro direttamente nel file Excel.
+        I record storici sono quelli non più attuali per un dato asset.
+        """
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import Font
+        except ImportError:
+            print("openpyxl non disponibile. Installa con: pip install openpyxl")
+            return
+        
+        try:
+            # Carica tutti i dati per identificare i record storici
+            df = self.load_data()
+            if df.empty:
+                return
+            
+            # Identifica gli asset correnti
+            current_df = self.get_current_assets_only()
+            current_ids = set(current_df['id'].astype(int))
+            
+            # Record storici sono quelli non nell'insieme degli attuali
+            historical_ids = set(df['id'].astype(int)) - current_ids
+            
+            print(f"Record storici da colorare: {len(historical_ids)}")
+            print(f"Record attuali: {len(current_ids)}")
+            
+            # Apri il file Excel con openpyxl
+            wb = load_workbook(self.excel_file)
+            ws = wb.active
+            
+            # Definisci il colore azzurro per il testo
+            blue_font = Font(color="0066CC")  # Azzurro
+            
+            # Itera sulle righe (skip header row 1)
+            for row_idx in range(2, ws.max_row + 1):
+                # La colonna A contiene l'ID (primo valore)
+                id_cell = ws.cell(row=row_idx, column=1)
+                
+                try:
+                    record_id = int(id_cell.value)
+                    
+                    # Se è un record storico, colora tutta la riga di azzurro
+                    if record_id in historical_ids:
+                        for col_idx in range(1, ws.max_column + 1):
+                            cell = ws.cell(row=row_idx, column=col_idx)
+                            cell.font = blue_font
+                except (ValueError, TypeError):
+                    # Se l'ID non è convertibile, skip
+                    continue
+            
+            # Salva il file
+            wb.save(self.excel_file)
+            print(f"File Excel aggiornato con {len(historical_ids)} record storici colorati di azzurro")
+            
+        except Exception as e:
+            print(f"Errore nella colorazione dei record storici: {e}")
+            import traceback
+            traceback.print_exc()

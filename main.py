@@ -156,6 +156,7 @@ class GABAssetMind:
         self.portfolio_table.register_callback('asset_selected', self._on_asset_selected)
         self.portfolio_table.register_callback('filter_requested', self._show_column_filter)
         self.portfolio_table.register_callback('data_filtered', self._on_data_filtered)
+        self.portfolio_table.register_callback('data_changed', self._on_data_changed)
         
         # Asset Form callbacks
         self.asset_form.register_callback('asset_saved', self._on_asset_saved)
@@ -403,6 +404,17 @@ class GABAssetMind:
     def _on_data_filtered(self, filtered_df: pd.DataFrame):
         """Gestisce i dati filtrati aggiornando i valori della navbar"""
         self._update_navbar_values()
+    
+    def _on_data_changed(self):
+        """Gestisce la modifica dei dati (es. dopo riordino) ricaricando tutto"""
+        try:
+            # Pulisce la cache per forzare il ricaricamento
+            self.data_cache.clear()
+            # Ricarica i dati del portfolio
+            self._load_portfolio_data()
+            print("DEBUG: Dati ricaricati dopo modifica")
+        except Exception as e:
+            print(f"Errore nel ricaricamento dati: {e}")
     
     def _center_window(self):
         """Centra la finestra al centro dello schermo"""
