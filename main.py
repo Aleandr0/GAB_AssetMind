@@ -209,6 +209,9 @@ class GABAssetMind:
     def _load_portfolio_data(self):
         """Carica i dati del portfolio e aggiorna l'interfaccia"""
         try:
+            print(f"DEBUG: _load_portfolio_data() - Inizio caricamento dati")
+            print(f"DEBUG: portfolio_table exists: {self.portfolio_table is not None}")
+            
             # Verifica cache
             cache_key = f"portfolio_data_{self.current_portfolio_file}"
             df = self.data_cache.get(cache_key)
@@ -216,16 +219,37 @@ class GABAssetMind:
             if df is None:
                 # Carica dati in base alla modalità di visualizzazione
                 if hasattr(self.portfolio_table, 'show_all_records') and self.portfolio_table.show_all_records:
+                    print(f"DEBUG: Caricando tutti i record...")
                     df = self.portfolio_manager.load_data()
                 else:
+                    print(f"DEBUG: Caricando solo asset correnti...")
                     df = self.portfolio_manager.get_current_assets_only()
+                
+                print(f"DEBUG: Dati caricati: {len(df)} righe")
+                print(f"DEBUG: Colonne disponibili: {list(df.columns) if not df.empty else 'DataFrame vuoto'}")
                 
                 # Cache dei dati
                 self.data_cache.set(cache_key, df)
+            else:
+                print(f"DEBUG: Dati dalla cache: {len(df)} righe")
             
             # Aggiorna componenti
             if self.portfolio_table:
+                print(f"DEBUG: Chiamando portfolio_table.update_data() con {len(df)} righe...")
                 self.portfolio_table.update_data(df)
+                print(f"DEBUG: update_data() completato")
+                
+                # FORZARE refresh completo dopo caricamento
+                try:
+                    self.after(100, lambda: [
+                        self.update_idletasks(),
+                        self.update(),
+                        print("DEBUG: Forced refresh dell'app completato")
+                    ])
+                except Exception as e:
+                    print(f"DEBUG: Errore forced refresh app: {e}")
+            else:
+                print(f"DEBUG: PROBLEMA - portfolio_table è None!")
                 
             self._update_navbar_values()
             

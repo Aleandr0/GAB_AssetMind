@@ -8,7 +8,7 @@ L'applicazione è stata completamente refactorizzata con un'architettura modular
 
 ```
 GAB_AssetMind/
-├── main_refactored.py       # Applicazione principale (refactored)
+├── main.py                   # Applicazione principale (refactored)
 ├── config.py               # Configurazione centralizzata
 ├── utils.py                # Utilità e helper functions
 ├── models.py               # Logica business e database
@@ -16,7 +16,9 @@ GAB_AssetMind/
 ├── asset_form.py           # Componente form gestione asset
 ├── charts_ui.py            # Componente grafici e analytics
 ├── export_ui.py            # Componente esportazione dati
-├── main.py                 # Versione originale (legacy)
+├── export_utils.py         # Utilità export PDF/CSV
+├── GAB_AssetMind.pyw       # Avvio Windows senza console (refactored)
+├── _Legacy/main.py         # Versione originale (legacy)
 └── portfolio_data.xlsx     # Database Excel
 ```
 
@@ -83,7 +85,7 @@ Classe base per tutti i componenti UI con sistema di callback
 - Backup e restore funzioni
 - Gestione file avanzata
 
-### 5. **Main Application** (`main_refactored.py`)
+### 5. **Main Application** (`main.py`)
 Orchestratore principale:
 - Inizializzazione componenti
 - Sistema di callback tra componenti
@@ -256,8 +258,8 @@ Per passare dalla versione legacy alla refactored:
 
 1. **Backup**: Crea backup completo dati esistenti
 2. **Test**: Verifica funzionalità con dati test
-3. **Migration**: Usa `main_refactored.py` come entry point
+3. **Migration**: Usa `main.py` come entry point
 4. **Validation**: Confronta risultati con versione legacy
-5. **Deployment**: Sostituisci `main.py` con `main_refactored.py`
+5. **Deployment**: Imposta `main.py` come entry point e mantieni `_Legacy/main.py` per compatibilità
 
 La versione legacy (`main.py`) rimane disponibile per compatibilità durante la fase di transizione.

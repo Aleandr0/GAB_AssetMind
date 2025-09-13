@@ -74,15 +74,15 @@ class Asset:
             'category': self.category,
             'asset_name': self.asset_name,
             'position': self.position,
-            'riskLevel': self.risk_level,
+            'risk_level': self.risk_level,
             'ticker': self.ticker,
             'isin': self.isin,
-            'createdAt': self.created_at,
-            'createdAmount': self.created_amount,
+            'created_at': self.created_at,
+            'created_amount': self.created_amount,
             'created_unit_price': self.created_unit_price,
             'created_total_value': self.created_total_value,
-            'updatedAt': self.updated_at,
-            'updatedAmount': self.updated_amount,
+            'updated_at': self.updated_at,
+            'updated_amount': self.updated_amount,
             'updated_unit_price': self.updated_unit_price,
             'updated_total_value': self.updated_total_value,
             'accumulation_plan': self.accumulation_plan,
@@ -120,35 +120,36 @@ class PortfolioManager:
     
     def _initialize_excel(self):
         if not os.path.exists(self.excel_file):
-            columns = [
-                'id', 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
-                'createdAt', 'createdAmount', 'createdUnitPrice', 'createdTotalValue',
-                'updatedAt', 'updatedAmount', 'updatedUnitPrice', 'updatedTotalValue',
-                'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
-            ]
+            # Usa schema centralizzato per evitare disallineamenti
+            from config import DatabaseConfig
+            columns = DatabaseConfig.DB_COLUMNS
             df = pd.DataFrame(columns=columns)
             df.to_excel(self.excel_file, index=False)
     
     def load_data(self) -> pd.DataFrame:
+        """Loader semplice e collaudato: legge il foglio attivo/default,
+        pulisce solo le date e calcola i totali mancanti, senza rinomine aggressive."""
         try:
-            # Legge Excel senza convertire "NA" in NaN - mantiene i valori testuali originali
             df = pd.read_excel(self.excel_file, keep_default_na=False, na_values=[''])
-            
-            # Formatta le date per rimuovere l'ora durante il caricamento
-            date_columns = ['created_at', 'updated_at']
-            for col in date_columns:
+            try:
+                print(f"DEBUG load_data: columns={list(df.columns)} rows={len(df)}")
+            except Exception:
+                pass
+
+            # Pulisce le date (rimuove l'ora se presente)
+            for col in ['created_at', 'updated_at']:
                 if col in df.columns:
                     df[col] = df[col].apply(self._clean_date_from_excel)
-            
-            # Calcola i valori totali se mancanti (formule Excel non calcolate)
+
+            # Calcola i totali se mancanti
             if 'created_total_value' in df.columns:
                 mask = pd.isna(df['created_total_value'])
                 df.loc[mask, 'created_total_value'] = df.loc[mask, 'created_amount'].fillna(0) * df.loc[mask, 'created_unit_price'].fillna(0)
-            
+
             if 'updated_total_value' in df.columns:
-                mask = pd.isna(df['updated_total_value']) 
+                mask = pd.isna(df['updated_total_value'])
                 df.loc[mask, 'updated_total_value'] = df.loc[mask, 'updated_amount'].fillna(0) * df.loc[mask, 'updated_unit_price'].fillna(0)
-            
+
             return df
         except Exception as e:
             print(f"Errore nel caricamento dati: {e}")
@@ -156,23 +157,27 @@ class PortfolioManager:
     
     def _clean_date_from_excel(self, date_value):
         """Pulisce le date caricate da Excel rimuovendo l'ora"""
-        if pd.isna(date_value) or date_value == "":
-            return date_value
-            
         try:
+            # Gestisce valori NaN/None/vuoti
+            if pd.isna(date_value) or date_value == "" or date_value is None:
+                return ""
+            
             # Se è un Timestamp pandas, convertilo solo alla data
             if isinstance(date_value, pd.Timestamp):
-                return date_value.strftime("%Y-%m-%d")
+                return date_value.strftime('%Y-%m-%d')
             
-            # Se è già una stringa, rimuovi eventuale ora
-            date_str = str(date_value)
-            if " " in date_str:
-                return date_str.split()[0]
+            # Se è già una stringa
+            date_str = str(date_value).strip()
+            if date_str == "" or date_str.lower() in ['nan', 'nat', 'none']:
+                return ""
+            
+            # Se contiene l'ora, rimuovila
+            if ' ' in date_str:
+                return date_str.split(' ')[0]
             
             return date_str
-            
-        except (ValueError, TypeError):
-            return date_value
+        except Exception:
+            return ""
     
     def save_data(self, df: pd.DataFrame):
         try:
@@ -400,7 +405,7 @@ class PortfolioManager:
                           df['position'].fillna('') + '|' + 
                           df['isin'].fillna(''))
         
-        # Converte date per ordinamento (usa updatedAt se disponibile, altrimenti createdAt)
+        # Converte date per ordinamento (usa updated_at se disponibile, altrimenti created_at)
         df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
                                             format='%Y-%m-%d', errors='coerce')
         
@@ -425,38 +430,44 @@ class PortfolioManager:
     
     def get_current_assets_only(self):
         """
-        Ritorna solo gli asset più recenti (un record per ogni asset unico)
-        Utile per verificare la logica di deduplica
+        Ritorna solo gli asset più recenti (un record per asset unico)
         """
         df = self.load_data()
-        
         if df.empty:
             return df
-        
-        # Crea chiave univoca per ogni asset
-        df['asset_key'] = (df['category'].fillna('') + '|' + 
-                          df['asset_name'].fillna('') + '|' + 
-                          df['position'].fillna('') + '|' + 
-                          df['isin'].fillna(''))
-        
-        # Mantiene l'indice originale per preservare l'ordine del file Excel
+
+        # Normalizza campi chiave per deduplica
+        def _norm(s):
+            if pd.isna(s):
+                return ''
+            val = str(s).strip()
+            if val.lower() in {'na','n/a','none','null','nan',''}:
+                return ''
+            return val
+        for key_col in ['category','asset_name','position','isin']:
+            if key_col in df.columns:
+                df[key_col] = df[key_col].apply(_norm)
+            else:
+                df[key_col] = ''
+
+        df['asset_key'] = (df['category'] + '|' + df['asset_name'] + '|' + df['position'] + '|' + df['isin'])
+
+        # Ordina per data effettiva (updated_at preferito), poi prendi il primo per asset_key
+        df['effective_date'] = pd.to_datetime(
+            df['updated_at'].replace(['', 'NA', 'N/A', 'na'], pd.NA).fillna(df['created_at']),
+            format='%Y-%m-%d', errors='coerce'
+        )
+
         df['original_order'] = df.index
-        
-        # Converte date per ordinamento
-        df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
-                                            format='%Y-%m-%d', errors='coerce')
-        
-        # Prende solo il record più recente per ogni asset
-        latest_records = df.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
-        
-        # Riordina secondo l'ordine originale del file Excel
+        latest_records = df.sort_values(['effective_date','original_order'], ascending=[False, True])\
+                           .groupby('asset_key').first().reset_index()
         latest_records = latest_records.sort_values('original_order')
-        
-        # Rimuove le colonne helper
-        latest_records = latest_records.drop(['asset_key', 'effective_date', 'original_order'], axis=1)
-        
-        # Mantiene l'ordine del file Excel originale (non riordina per ID)
-        # L'ordine deve essere quello impostato nel file dopo il riordino
+        latest_records = latest_records.drop(columns=[c for c in ['asset_key','effective_date','original_order'] if c in latest_records.columns])
+
+        try:
+            print(f"DEBUG current_assets_only: input_rows={len(df)} output_rows={len(latest_records)}")
+        except Exception:
+            pass
         return latest_records
     
     def get_filtered_assets(self, filters: Dict[str, Any] = None) -> pd.DataFrame:

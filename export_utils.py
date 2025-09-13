@@ -106,18 +106,18 @@ class ReportGenerator:
             story.append(Paragraph("Dettaglio Asset Principali", heading_style))
             
             if not df.empty:
-                # Ordina per valore totale attuale decrescente
-                df_sorted = df.sort_values('updatedTotalValue', ascending=False, na_last=True).head(15)
+                # Ordina per valore totale attuale decrescente (snake_case)
+                df_sorted = df.sort_values('updated_total_value', ascending=False, na_last=True).head(15)
                 
                 asset_data = [['Asset', 'Categoria', 'Valore Attuale', 'Reddito Annuo']]
                 
                 for _, row in df_sorted.iterrows():
-                    current_value = row['updatedTotalValue'] if pd.notna(row['updatedTotalValue']) else row['createdTotalValue']
-                    income = (row['incomePerYear'] if pd.notna(row['incomePerYear']) else 0) + \
-                            (row['rentalIncome'] if pd.notna(row['rentalIncome']) else 0)
+                    current_value = row['updated_total_value'] if pd.notna(row['updated_total_value']) else row['created_total_value']
+                    income = (row['income_per_year'] if pd.notna(row['income_per_year']) else 0) + \
+                            (row['rental_income'] if pd.notna(row['rental_income']) else 0)
                     
                     asset_data.append([
-                        str(row['assetName'])[:25] + '...' if len(str(row['assetName'])) > 25 else str(row['assetName']),
+                        str(row['asset_name'])[:25] + '...' if len(str(row['asset_name'])) > 25 else str(row['asset_name']),
                         str(row['category']),
                         f"€{current_value:,.0f}" if pd.notna(current_value) else "€0",
                         f"€{income:,.0f}"
@@ -154,18 +154,18 @@ class ReportGenerator:
                 return False
             
             # Aggiungi colonne calcolate
-            df['currentValue'] = df['updatedTotalValue'].fillna(df['createdTotalValue'])
-            df['totalIncome'] = df['incomePerYear'].fillna(0) + df['rentalIncome'].fillna(0)
-            df['performance'] = ((df['updatedTotalValue'] - df['createdTotalValue']) / df['createdTotalValue'] * 100).round(2)
-            df['yieldPercentage'] = (df['totalIncome'] / df['currentValue'] * 100).round(2)
+            df['current_value'] = df['updated_total_value'].fillna(df['created_total_value'])
+            df['total_income'] = df['income_per_year'].fillna(0) + df['rental_income'].fillna(0)
+            df['performance'] = ((df['updated_total_value'] - df['created_total_value']) / df['created_total_value'] * 100).round(2)
+            df['yield_percentage'] = (df['total_income'] / df['current_value'] * 100).round(2)
             
             # Riordina colonne
             columns_order = [
-                'Id', 'category', 'assetName', 'position', 'riskLevel', 'ticker', 'isin',
-                'createdAt', 'createdAmount', 'createdUnitPrice', 'createdTotalValue',
-                'updatedAt', 'updatedAmount', 'updatedUnitPrice', 'updatedTotalValue',
-                'currentValue', 'performance', 'totalIncome', 'yieldPercentage',
-                'accumulationPlan', 'accumulationAmount', 'incomePerYear', 'rentalIncome', 'note'
+                'id', 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
+                'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
+                'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
+                'current_value', 'performance', 'total_income', 'yield_percentage',
+                'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
             ]
             
             # Seleziona solo colonne esistenti
@@ -220,8 +220,9 @@ class ChartGenerator:
             if df.empty:
                 return False
             
-            df['currentValue'] = df['updatedTotalValue'].fillna(df['createdTotalValue'])
-            category_values = df.groupby('category')['currentValue'].sum().sort_values(ascending=False)
+            # Colonna calcolata coerente con schema snake_case
+            df['current_value'] = df['updated_total_value'].fillna(df['created_total_value'])
+            category_values = df.groupby('category')['current_value'].sum().sort_values(ascending=False)
             
             plt.figure(figsize=(12, 8))
             bars = plt.bar(category_values.index, category_values.values, 
@@ -257,7 +258,7 @@ class ChartGenerator:
             if df.empty:
                 return False
             
-            risk_counts = df['riskLevel'].value_counts().sort_index()
+            risk_counts = df['risk_level'].value_counts().sort_index()
             risk_labels = ['Molto Basso', 'Basso', 'Medio', 'Alto', 'Molto Alto']
             colors = ['green', 'lightgreen', 'yellow', 'orange', 'red']
             

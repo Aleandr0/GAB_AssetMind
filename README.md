@@ -60,7 +60,7 @@ Un'applicazione Python avanzata per il monitoraggio e la gestione di portafogli 
 cd GAB_AssetMind
 
 # Avvia l'applicazione (installerà automaticamente le dipendenze)
-python run_app.py
+python main.py
 ```
 
 ### Installazione Manuale
@@ -69,21 +69,21 @@ python run_app.py
 pip install -r requirements.txt
 
 # Avvia l'applicazione REFACTORED (raccomandato)
-python main_refactored.py
+python main.py
 
 # Oppure la versione legacy
-python main.py
+python _Legacy/main.py
 ```
 
 ### 🆕 Versione Refactored vs Legacy
-- **`main_refactored.py`**: Architettura modulare, performance migliori, più stabile
-- **`main.py`**: Versione originale, mantenuta per compatibilità durante transizione
+- **`main.py`**: Versione refactored attuale (architettura modulare, più stabile)
+- **`_Legacy/main.py`**: Versione legacy mantenuta per compatibilità
 
 ## 📁 Struttura del Progetto
 
 ```
 GAB_AssetMind/
-├── main_refactored.py   # 🆕 Applicazione principale (architettura modulare)
+├── main.py              # 🆕 Applicazione principale (architettura modulare)
 ├── config.py           # 🆕 Configurazione centralizzata
 ├── utils.py            # 🆕 Utilità e validazione dati  
 ├── ui_components.py    # 🆕 Componenti UI base
@@ -91,9 +91,9 @@ GAB_AssetMind/
 ├── charts_ui.py        # 🆕 Interface grafici ottimizzata
 ├── export_ui.py        # 🆕 Sistema export professionale
 ├── models.py           # Modelli dati e gestione Excel (migliorato)
-├── main.py             # Applicazione legacy (compatibilità)
+├── _Legacy/main.py     # Applicazione legacy (compatibilità)
 ├── export_utils.py     # Utilità per export PDF/CSV
-├── run_app.py          # Script di avvio con controllo dipendenze
+├── GAB_AssetMind.pyw   # Avvio Windows senza console (refactored)
 ├── requirements.txt    # Dipendenze Python
 ├── portfolio_data.xlsx # Database Excel (creato automaticamente)
 ├── ARCHITECTURE.md     # 🆕 Documentazione architettura dettagliata
@@ -108,23 +108,23 @@ L'applicazione utilizza un file Excel (`portfolio_data.xlsx`) come database. Il 
 |-------|-------------|
 | Id | Identificativo univoco |
 | category | Categoria asset (ETF, Azioni, etc.) |
-| assetName | Nome dell'asset |
+| asset_name | Nome dell'asset |
 | position | Posizione/quantità |
-| riskLevel | Livello di rischio (1-5) |
+| risk_level | Livello di rischio (1-5) |
 | ticker | Simbolo di borsa |
 | isin | Codice ISIN |
-| createdAt | Data di creazione |
-| createdAmount | Quantità iniziale |
-| createdUnitPrice | Prezzo unitario iniziale |
-| createdTotalValue | Valore totale iniziale |
-| updatedAt | Data ultimo aggiornamento |
-| updatedAmount | Quantità attuale |
-| updatedUnitPrice | Prezzo unitario attuale |
-| updatedTotalValue | Valore totale attuale |
-| accumulationPlan | Piano di accumulo |
-| accumulationAmount | Importo accumulo mensile |
-| incomePerYear | Reddito annuale |
-| rentalIncome | Reddito immobiliare |
+| created_at | Data di creazione |
+| created_amount | Quantità iniziale |
+| created_unit_price | Prezzo unitario iniziale |
+| created_total_value | Valore totale iniziale |
+| updated_at | Data ultimo aggiornamento |
+| updated_amount | Quantità attuale |
+| updated_unit_price | Prezzo unitario attuale |
+| updated_total_value | Valore totale attuale |
+| accumulation_plan | Piano di accumulo |
+| accumulation_amount | Importo accumulo mensile |
+| income_per_year | Reddito annuale |
+| rental_income | Reddito immobiliare |
 | note | Note personali |
 
 ## 🎨 Interfaccia Utente
@@ -209,8 +209,8 @@ ctk.set_default_color_theme("green")  # "blue", "green", "dark-blue"
 L'applicazione calcola automaticamente:
 - **Performance**: `(Valore Attuale - Valore Iniziale) / Valore Iniziale * 100`
 - **Rendimento**: `Reddito Totale / Valore Attuale * 100`
-- **Valore Corrente**: Utilizza `updatedTotalValue` se disponibile, altrimenti `createdTotalValue`
-- **Reddito Totale**: Somma di `incomePerYear` + `rentalIncome`
+- **Valore Corrente**: Utilizza `updated_total_value` se disponibile, altrimenti `created_total_value`
+- **Reddito Totale**: Somma di `income_per_year` + `rental_income`
 
 ## 🚀 Creazione Eseguibile
 
@@ -241,7 +241,7 @@ pip install matplotlib --upgrade
 L'applicazione è stata completamente **refactorizzata** con un'architettura modulare che migliora drasticamente manutenibilità, performance e scalabilità.
 
 ### 📁 Nuova Struttura
-- **`main_refactored.py`**: Applicazione principale con architettura modulare
+- **`main.py`**: Applicazione principale con architettura modulare
 - **`config.py`**: Configurazione centralizzata (colori, dimensioni, mappature)
 - **`utils.py`**: Utilità riutilizzabili (validazione, formattazione, cache)
 - **`ui_components.py`**: Componenti UI specializzati (NavigationBar, PortfolioTable)

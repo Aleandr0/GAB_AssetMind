@@ -351,13 +351,8 @@ class AssetForm(BaseUIComponent):
             asset_data['id'] = next_id
             
             # 4. Riscrive nella prima posizione libera
-            # Fix: convert camelCase keys to snake_case for Asset constructor
+            # Schema già in snake_case: serve solo mappare 'id' -> 'asset_id'
             asset_data['asset_id'] = asset_data.pop('id')
-            asset_data['risk_level'] = asset_data.pop('riskLevel')
-            asset_data['created_at'] = asset_data.pop('createdAt')
-            asset_data['created_amount'] = asset_data.pop('createdAmount')
-            asset_data['updated_at'] = asset_data.pop('updatedAt')
-            asset_data['updated_amount'] = asset_data.pop('updatedAmount')
             new_asset = Asset(**asset_data)
             success = self.portfolio_manager.add_asset(new_asset)
             
