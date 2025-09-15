@@ -30,6 +30,8 @@ from ui_components import NavigationBar, PortfolioTable
 from asset_form import AssetForm
 from charts_ui import ChartsUI
 from export_ui import ExportUI
+from logging_config import get_logger, set_debug_mode
+from security_validation import PathSecurityValidator, SecurityError
 
 # Configurazione tema dell'applicazione
 ctk.set_appearance_mode("light")  # Modalità chiara
@@ -58,6 +60,7 @@ class GABAssetMind:
         self.portfolio_manager: Optional[PortfolioManager] = None
         self.data_cache = DataCache()
         self.current_portfolio_file = DatabaseConfig.DEFAULT_PORTFOLIO_FILE
+        self.path_validator = PathSecurityValidator()
         
         # Stato applicazione
         self.current_page = "Portfolio"
@@ -86,7 +89,8 @@ class GABAssetMind:
             app_dir = get_application_directory()
             default_path = os.path.join(app_dir, self.current_portfolio_file)
             self.portfolio_manager = PortfolioManager(default_path)
-            print(f"Portfolio system initialized: {default_path}")
+            self.logger = get_logger('main')
+            self.logger.info(f"Portfolio system initialized: {default_path}")
             
         except Exception as e:
             error_msg = ErrorHandler.handle_file_error(e, "inizializzazione sistema portfolio")
@@ -209,8 +213,8 @@ class GABAssetMind:
     def _load_portfolio_data(self):
         """Carica i dati del portfolio e aggiorna l'interfaccia"""
         try:
-            print(f"DEBUG: _load_portfolio_data() - Inizio caricamento dati")
-            print(f"DEBUG: portfolio_table exists: {self.portfolio_table is not None}")
+            self.logger.debug(f"Inizio caricamento dati portfolio")
+            self.logger.debug(f"Portfolio table exists: {self.portfolio_table is not None}")
             
             # Verifica cache
             cache_key = f"portfolio_data_{self.current_portfolio_file}"
@@ -219,45 +223,48 @@ class GABAssetMind:
             if df is None:
                 # Carica dati in base alla modalità di visualizzazione
                 if hasattr(self.portfolio_table, 'show_all_records') and self.portfolio_table.show_all_records:
-                    print(f"DEBUG: Caricando tutti i record...")
+                    self.logger.debug("Caricando tutti i record")
                     df = self.portfolio_manager.load_data()
                 else:
-                    print(f"DEBUG: Caricando solo asset correnti...")
+                    self.logger.debug("Caricando solo asset correnti")
                     df = self.portfolio_manager.get_current_assets_only()
-                
-                print(f"DEBUG: Dati caricati: {len(df)} righe")
-                print(f"DEBUG: Colonne disponibili: {list(df.columns) if not df.empty else 'DataFrame vuoto'}")
+
+                self.logger.debug(f"Dati caricati: {len(df)} righe")
+                if not df.empty:
+                    self.logger.debug(f"Colonne disponibili: {list(df.columns)}")
                 
                 # Cache dei dati
                 self.data_cache.set(cache_key, df)
             else:
-                print(f"DEBUG: Dati dalla cache: {len(df)} righe")
+                self.logger.debug(f"Dati dalla cache: {len(df)} righe")
             
             # Aggiorna componenti
             if self.portfolio_table:
-                print(f"DEBUG: Chiamando portfolio_table.update_data() con {len(df)} righe...")
+                self.logger.debug(f"Aggiornando portfolio_table con {len(df)} righe")
                 self.portfolio_table.update_data(df)
-                print(f"DEBUG: update_data() completato")
-                
-                # FORZARE refresh completo dopo caricamento
+                self.logger.debug("update_data() completato")
+
+                # Refresh UI ottimizzato - solo update_idletasks
                 try:
-                    self.after(100, lambda: [
-                        self.update_idletasks(),
-                        self.update(),
-                        print("DEBUG: Forced refresh dell'app completato")
-                    ])
+                    if hasattr(self, 'after'):  # Solo se la finestra è inizializzata
+                        self.after(50, lambda: [
+                            self.update_idletasks(),
+                            self.logger.debug("UI refresh completato")
+                        ])
+                    else:
+                        self.logger.debug("UI refresh skipped - finestra non inizializzata")
                 except Exception as e:
-                    print(f"DEBUG: Errore forced refresh app: {e}")
+                    self.logger.error(f"Errore refresh UI: {e}")
             else:
-                print(f"DEBUG: PROBLEMA - portfolio_table è None!")
+                self.logger.error("PROBLEMA - portfolio_table è None!")
                 
             self._update_navbar_values()
             
         except Exception as e:
             error_msg = ErrorHandler.handle_data_error(e, "caricamento portfolio")
-            print(f"Errore caricamento dati: {error_msg}")
+            self.logger.error(f"Errore caricamento dati: {error_msg}")
             import traceback
-            traceback.print_exc()
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
     
     def _update_navbar_values(self):
         """Aggiorna i valori mostrati nella navbar"""
@@ -282,7 +289,7 @@ class GABAssetMind:
                 self.navbar.update_values(total_value, visible_value, percentage)
                 
         except Exception as e:
-            print(f"Errore aggiornamento valori navbar: {e}")
+            self.logger.error(f"Errore aggiornamento valori navbar: {e}")
     
     def _refresh_portfolio_list(self):
         """Aggiorna la lista dei portfolio disponibili"""
@@ -302,20 +309,32 @@ class GABAssetMind:
                 
         except Exception as e:
             error_msg = ErrorHandler.handle_file_error(e, "refresh lista portfolio")
-            print(f"Errore refresh portfolio: {error_msg}")
+            self.logger.error(f"Errore refresh portfolio: {error_msg}")
     
     def _switch_portfolio(self, selected_file: str):
-        """Cambia il portfolio attivo"""
+        """Cambia il portfolio attivo con validazione sicurezza"""
         try:
             if selected_file != self.current_portfolio_file:
-                self.current_portfolio_file = selected_file
-                
-                # Costruisce il percorso completo
-                app_dir = get_application_directory()
-                full_path = os.path.join(app_dir, selected_file)
-                
-                # Aggiorna il PortfolioManager
-                self.portfolio_manager = PortfolioManager(full_path)
+                # Valida il path prima di procedere
+                try:
+                    app_dir = get_application_directory()
+                    full_path = os.path.join(app_dir, selected_file)
+                    validated_path = self.path_validator.validate_portfolio_path(full_path)
+
+                    self.current_portfolio_file = selected_file
+                    self.logger.info(f"Cambio portfolio validato: {validated_path}")
+
+                    # Aggiorna il PortfolioManager con path sicuro
+                    self.portfolio_manager = PortfolioManager(str(validated_path))
+
+                except SecurityError as e:
+                    self.logger.error(f"Portfolio non sicuro: {e}")
+                    messagebox.showerror("Errore Sicurezza", f"Portfolio non sicuro: {e}")
+                    return
+                except Exception as e:
+                    self.logger.error(f"Errore validazione portfolio: {e}")
+                    messagebox.showerror("Errore", f"Errore validazione portfolio: {e}")
+                    return
                 
                 # Pulisce cache e ricarica
                 self.data_cache.clear()
@@ -333,7 +352,7 @@ class GABAssetMind:
                 # Ricarica dati
                 self._load_portfolio_data()
                 
-                print(f"Portfolio cambiato a: {selected_file}")
+                self.logger.info(f"Portfolio cambiato a: {selected_file}")
                 
         except Exception as e:
             error_msg = ErrorHandler.handle_file_error(e, f"cambio portfolio {selected_file}")
@@ -343,26 +362,35 @@ class GABAssetMind:
                 self.navbar.portfolio_selector.set(self.current_portfolio_file)
     
     def _create_new_portfolio(self):
-        """Crea un nuovo portfolio"""
+        """Crea un nuovo portfolio con validazione sicurezza"""
         try:
             dialog = ctk.CTkInputDialog(text="Nome del nuovo portfolio:", title="Nuovo Portfolio")
             portfolio_name = dialog.get_input()
-            
+
             if portfolio_name:
-                if not portfolio_name.lower().endswith('.xlsx'):
-                    portfolio_name += '.xlsx'
-                
-                app_dir = get_application_directory()
-                new_file_path = os.path.join(app_dir, portfolio_name)
-                
-                if os.path.exists(new_file_path):
-                    messagebox.showerror("Errore", f"Il portfolio '{portfolio_name}' esiste già!")
+                try:
+                    # Crea path sicuro per il nuovo portfolio
+                    safe_path = self.path_validator.create_safe_portfolio_path(portfolio_name)
+
+                    if safe_path.exists():
+                        messagebox.showerror("Errore", f"Il portfolio '{safe_path.name}' esiste già!")
+                        return
+
+                    self.logger.info(f"Creando nuovo portfolio sicuro: {safe_path}")
+
+                    # Crea nuovo portfolio con path validato
+                    new_portfolio_manager = PortfolioManager(str(safe_path))
+                    self.current_portfolio_file = safe_path.name
+                    self.portfolio_manager = new_portfolio_manager
+
+                except SecurityError as e:
+                    self.logger.error(f"Nome portfolio non sicuro: {e}")
+                    messagebox.showerror("Errore Sicurezza", f"Nome portfolio non sicuro: {e}")
                     return
-                
-                # Crea nuovo portfolio
-                new_portfolio_manager = PortfolioManager(new_file_path)
-                self.current_portfolio_file = portfolio_name
-                self.portfolio_manager = new_portfolio_manager
+                except Exception as e:
+                    self.logger.error(f"Errore creazione portfolio sicuro: {e}")
+                    messagebox.showerror("Errore", f"Errore creazione portfolio: {e}")
+                    return
                 
                 # Aggiorna interfaccia
                 self._refresh_portfolio_list()
@@ -436,9 +464,9 @@ class GABAssetMind:
             self.data_cache.clear()
             # Ricarica i dati del portfolio
             self._load_portfolio_data()
-            print("DEBUG: Dati ricaricati dopo modifica")
+            self.logger.debug("Dati ricaricati dopo modifica")
         except Exception as e:
-            print(f"Errore nel ricaricamento dati: {e}")
+            self.logger.error(f"Errore nel ricaricamento dati: {e}")
     
     def _center_window(self):
         """Centra la finestra al centro dello schermo"""
@@ -462,14 +490,15 @@ class GABAssetMind:
     def run(self):
         """Avvia l'applicazione"""
         try:
-            print("GAB AssetMind (Refactored) avviato con successo")
-            print(f"Portfolio attivo: {self.current_portfolio_file}")
-            print(f"Componenti caricati: {len([c for c in [self.navbar, self.portfolio_table, self.asset_form, self.charts_ui, self.export_ui] if c])}/5")
+            self.logger.info("GAB AssetMind (Refactored) avviato con successo")
+            self.logger.info(f"Portfolio attivo: {self.current_portfolio_file}")
+            component_count = len([c for c in [self.navbar, self.portfolio_table, self.asset_form, self.charts_ui, self.export_ui] if c])
+            self.logger.info(f"Componenti caricati: {component_count}/5")
             
             self.root.mainloop()
             
         except KeyboardInterrupt:
-            print("Applicazione interrotta dall'utente")
+            self.logger.info("Applicazione interrotta dall'utente")
         except Exception as e:
             error_msg = ErrorHandler.handle_ui_error(e, "esecuzione principale")
             messagebox.showerror("Errore Critico", error_msg)
@@ -481,22 +510,35 @@ class GABAssetMind:
         try:
             if self.charts_ui:
                 self.charts_ui.cleanup()
-            
+
+            if self.portfolio_table:
+                self.portfolio_table.cleanup_performance_optimizers()
+
             if self.data_cache:
                 self.data_cache.clear()
-                
-            print("Cleanup completato")
+
+            self.logger.info("Cleanup completato")
             
         except Exception as e:
-            print(f"Errore durante cleanup: {e}")
+            self.logger.error(f"Errore durante cleanup: {e}")
 
 def main():
     """Funzione principale di avvio"""
     try:
+        # Inizializza logging prima di tutto
+        logger = get_logger('startup')
+
+        # Configura debug mode da variabile ambiente o argomenti
+        debug_mode = (os.getenv('GAB_DEBUG', 'false').lower() == 'true' or
+                     '--debug' in sys.argv or '-d' in sys.argv)
+        if debug_mode:
+            set_debug_mode(True)
+            logger.info("Debug mode ATTIVATO")
+
         # Verifica requisiti di sistema
-        print("Avvio GAB AssetMind (Refactored Version)...")
-        print(f"Python: {sys.version}")
-        print(f"Working Directory: {os.getcwd()}")
+        logger.info("Avvio GAB AssetMind (Refactored Version)...")
+        logger.info(f"Python: {sys.version}")
+        logger.info(f"Working Directory: {os.getcwd()}")
         
         # Avvia applicazione
         app = GABAssetMind()
@@ -513,9 +555,16 @@ def main():
             "Errore Critico GAB AssetMind", 
             f"Impossibile avviare l'applicazione:\n\n{e}\n\nContattare il supporto tecnico."
         )
-        print(f"Errore critico: {e}")
-        import traceback
-        traceback.print_exc()
+        try:
+            logger = get_logger('startup')
+            logger.critical(f"Errore critico: {e}")
+            import traceback
+            logger.critical(f"Stack trace: {traceback.format_exc()}")
+        except:
+            # Fallback se anche il logging fallisce
+            print(f"Errore critico: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
     main()

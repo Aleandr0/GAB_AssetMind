@@ -15,6 +15,8 @@ from config import UIConfig, Messages
 from utils import ErrorHandler, safe_execute
 from models import PortfolioManager
 from ui_components import BaseUIComponent
+from security_validation import PathSecurityValidator, SecurityError
+from logging_config import get_logger
 
 class ExportUI(BaseUIComponent):
     """Componente per l'esportazione di dati"""
@@ -22,6 +24,8 @@ class ExportUI(BaseUIComponent):
     def __init__(self, parent, portfolio_manager: PortfolioManager):
         super().__init__(parent, portfolio_manager)
         self.export_frame = None
+        self.path_validator = PathSecurityValidator()
+        self.logger = get_logger('ExportUI')
     
     def create_export_interface(self) -> ctk.CTkFrame:
         """Crea l'interfaccia completa per l'export"""
@@ -231,13 +235,28 @@ class ExportUI(BaseUIComponent):
             )
             
             if filename:
-                df = self.portfolio_manager.load_data()
-                if df.empty:
-                    messagebox.showwarning("Avviso", "Nessun dato da esportare")
+                try:
+                    # Valida il path di export per sicurezza
+                    validated_path = self.path_validator.validate_export_path(filename)
+                    self.logger.info(f"Path export CSV validato: {validated_path}")
+
+                    df = self.portfolio_manager.load_data()
+                    if df.empty:
+                        messagebox.showwarning("Avviso", "Nessun dato da esportare")
+                        return
+
+                    # Esporta con encoding UTF-8 per supportare caratteri speciali
+                    df.to_csv(str(validated_path), index=False, encoding='utf-8-sig', sep=';')
+                    filename = str(validated_path)  # Usa path validato
+
+                except SecurityError as e:
+                    self.logger.error(f"Path export non sicuro: {e}")
+                    messagebox.showerror("Errore Sicurezza", f"Path non sicuro: {e}")
                     return
-                
-                # Esporta con encoding UTF-8 per supportare caratteri speciali
-                df.to_csv(filename, index=False, encoding='utf-8-sig', sep=';')
+                except Exception as e:
+                    self.logger.error(f"Errore validazione path export: {e}")
+                    messagebox.showerror("Errore", f"Errore validazione path: {e}")
+                    return
                 
                 messagebox.showinfo("Successo", 
                                   f"Dati esportati con successo!\n\nFile: {os.path.basename(filename)}\n"
@@ -338,14 +357,29 @@ class ExportUI(BaseUIComponent):
             )
             
             if filename:
-                df = self.portfolio_manager.load_data()
-                if df.empty:
-                    messagebox.showwarning("Avviso", "Nessun dato da fare backup")
+                try:
+                    # Valida il path di backup per sicurezza
+                    validated_path = self.path_validator.validate_export_path(filename)
+                    self.logger.info(f"Path backup validato: {validated_path}")
+
+                    df = self.portfolio_manager.load_data()
+                    if df.empty:
+                        messagebox.showwarning("Avviso", "Nessun dato da fare backup")
+                        return
+
+                    # Salva usando il metodo del PortfolioManager per mantenere le formule
+                    backup_manager = PortfolioManager(str(validated_path))
+                    backup_manager.save_data(df)
+                    filename = str(validated_path)  # Usa path validato
+
+                except SecurityError as e:
+                    self.logger.error(f"Path backup non sicuro: {e}")
+                    messagebox.showerror("Errore Sicurezza", f"Path non sicuro: {e}")
                     return
-                
-                # Salva usando il metodo del PortfolioManager per mantenere le formule
-                backup_manager = PortfolioManager(filename)
-                backup_manager.save_data(df)
+                except Exception as e:
+                    self.logger.error(f"Errore validazione path backup: {e}")
+                    messagebox.showerror("Errore", f"Errore validazione path: {e}")
+                    return
                 
                 messagebox.showinfo("Successo",
                                   f"Backup creato con successo!\n\n"

@@ -9,6 +9,8 @@ import re
 from datetime import datetime
 from typing import Any, Optional, Union, List, Dict
 from config import ValidationConfig, FieldMapping
+# Import del sistema centralizzato per backward compatibility
+from date_utils import format_for_display, format_for_storage, parse_date as central_parse_date
 
 class DataValidator:
     """Validatore per dati di input degli asset"""
@@ -61,30 +63,19 @@ class DataValidator:
     
     @staticmethod
     def validate_date(date_value: Any) -> str:
-        """Valida e formatta una data"""
+        """Valida e formatta una data usando il sistema centralizzato"""
         if DataValidator.is_empty(date_value):
             return ""
-            
-        date_str = str(date_value).strip()
-        
-        # Verifica formato YYYY-MM-DD
-        if re.match(ValidationConfig.PATTERNS['date'], date_str):
-            return date_str
-            
-        # Prova a parsare altri formati comuni
+
+        # Usa il sistema centralizzato per parsing e validazione
         try:
-            if '/' in date_str and len(date_str) == 10:
-                # Formato DD/MM/YYYY -> YYYY-MM-DD
-                parsed = datetime.strptime(date_str, "%d/%m/%Y")
-                return parsed.strftime("%Y-%m-%d")
-            elif '-' in date_str:
-                # Altri formati con trattini
-                parsed = pd.to_datetime(date_str)
-                return parsed.strftime("%Y-%m-%d")
-        except (ValueError, TypeError):
-            pass
-            
-        raise ValueError(f"Formato data non valido: {date_value}")
+            parsed = central_parse_date(date_value, strict=True)
+            if parsed:
+                return format_for_storage(parsed)
+            else:
+                raise ValueError(f"Formato data non valido: {date_value}")
+        except Exception as e:
+            raise ValueError(f"Formato data non valido: {date_value}")
     
     @staticmethod
     def validate_isin(isin: str) -> str:
@@ -210,7 +201,7 @@ class ErrorHandler:
             return f"File non trovato: {file_path}"
         elif isinstance(error, PermissionError):
             return f"Permessi insufficienti per accedere al file: {file_path}"
-        elif isinstance(error, pd.errors.ExcelFileError):
+        elif "Excel" in str(type(error).__name__) or "BadZipFile" in str(type(error).__name__):
             return f"File Excel corrotto o non valido: {file_path}"
         else:
             return f"Errore nell'accesso al file {file_path}: {error}"

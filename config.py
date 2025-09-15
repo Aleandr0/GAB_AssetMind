@@ -199,12 +199,18 @@ class Messages:
 
 # Funzioni di utilità per la configurazione
 def get_application_directory() -> str:
-    """Ottiene la directory dell'applicazione"""
+    """Restituisce la directory dove cercare/salvare i file dell'app.
+
+    - In eseguibile PyInstaller: usa la cartella dell'eseguibile (dist/), NON la
+      cartella temporanea di estrazione (`_MEIPASS`) che è di sola lettura.
+    - In esecuzione da sorgente: usa la cartella del file corrente.
+    """
     import sys
-    if hasattr(sys, '_MEIPASS'):
-        return sys._MEIPASS
-    else:
-        return os.path.dirname(os.path.abspath(__file__))
+    # Eseguibile "frozen" (PyInstaller): punta alla cartella dell'eseguibile
+    if getattr(sys, 'frozen', False) and hasattr(sys, 'executable'):
+        return os.path.dirname(sys.executable)
+    # Esecuzione normale: cartella del modulo
+    return os.path.dirname(os.path.abspath(__file__))
 
 def get_theme_colors(dark_mode: bool = False) -> Dict[str, str]:
     """Restituisce i colori del tema in base alla modalità"""

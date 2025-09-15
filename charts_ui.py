@@ -17,6 +17,8 @@ from config import UIConfig
 from utils import ErrorHandler, safe_execute
 from models import PortfolioManager
 from ui_components import BaseUIComponent
+from logging_config import get_logger
+from date_utils import get_date_manager
 
 class ChartsUI(BaseUIComponent):
     """Componente per la visualizzazione di grafici e analytics"""
@@ -31,6 +33,7 @@ class ChartsUI(BaseUIComponent):
         self.start_year = None
         self.end_year = None
         self.available_years = []
+        self.logger = get_logger('ChartsUI')
         
         # Configurazione matplotlib per CustomTkinter
         plt.style.use('default')
@@ -151,20 +154,20 @@ class ChartsUI(BaseUIComponent):
     
     def _on_chart_type_changed(self, selected_type: str):
         """Gestisce il cambio di tipo di grafico"""
-        print(f"DEBUG: Cambio grafico a: {selected_type}")
+        self.logger.debug(f"Cambio grafico a: {selected_type}")
         
         # Mostra/nascondi controlli temporali
         if selected_type == "Evoluzione Temporale":
-            print("DEBUG: Mostrando controlli temporali")
+            self.logger.debug("Mostrando controlli temporali")
             self._setup_temporal_controls()
             # Mostra i controlli sulla stessa riga
             self.start_year_label.pack(side="left", padx=(20, 5), pady=15)
             self.start_year_selector.pack(side="left", padx=(0, 10), pady=15)
             self.end_year_label.pack(side="left", padx=(10, 5), pady=15)
             self.end_year_selector.pack(side="left", padx=(0, 10), pady=15)
-            print("DEBUG: Controlli temporali mostrati")
+            self.logger.debug(" Controlli temporali mostrati")
         else:
-            print("DEBUG: Nascondendo controlli temporali")
+            self.logger.debug("Nascondendo controlli temporali")
             # Nascondi i controlli temporali
             for control in self.temporal_controls:
                 control.pack_forget()
@@ -218,7 +221,7 @@ class ChartsUI(BaseUIComponent):
                 self.end_year.set(self.available_years[-1])
                 
         except Exception as e:
-            print(f"Errore nella configurazione controlli temporali: {e}")
+            self.logger.error(f"Errore nella configurazione controlli temporali: {e}")
     
     def _update_chart(self):
         """Aggiorna il grafico corrente"""
@@ -434,22 +437,22 @@ class ChartsUI(BaseUIComponent):
                 excel_records = len(excel_data)
                 loaded_records = len(all_data)
                 
-                print(f"DEBUG CONFRONTO CARICAMENTO:")
-                print(f"  - Record nel file Excel: {excel_records}")
-                print(f"  - Record caricati in memoria: {loaded_records}")
-                print(f"  - Tutti i record caricati: {'✓ SÌ' if excel_records == loaded_records else '✗ NO'}")
+                self.logger.debug("CONFRONTO CARICAMENTO:")
+                self.logger.debug(f"  - Record nel file Excel: {excel_records}")
+                self.logger.debug(f"  - Record caricati in memoria: {loaded_records}")
+                self.logger.debug(f"  - Tutti i record caricati: {'✓ SÌ' if excel_records == loaded_records else '✗ NO'}")
                 
                 if excel_records != loaded_records:
-                    print(f"  - ATTENZIONE: Mancano {excel_records - loaded_records} record!")
-                    print(f"  - ID nel Excel: {sorted(excel_data['id'].tolist())}")
-                    print(f"  - ID caricati: {sorted(all_data['id'].tolist())}")
+                    self.logger.debug(f"  - ATTENZIONE: Mancano {excel_records - loaded_records} record!")
+                    self.logger.debug(f"  - ID nel Excel: {sorted(excel_data['id'].tolist())}")
+                    self.logger.debug(f"  - ID caricati: {sorted(all_data['id'].tolist())}")
                     
                     # Trova record mancanti
                     excel_ids = set(excel_data['id'].tolist())
                     loaded_ids = set(all_data['id'].tolist())
                     missing_ids = excel_ids - loaded_ids
                     if missing_ids:
-                        print(f"  - Record mancanti (ID): {sorted(missing_ids)}")
+                        self.logger.debug(f"  - Record mancanti (ID): {sorted(missing_ids)}")
                         
                         # Mostra info sui record mancanti
                         for missing_id in sorted(missing_ids):
@@ -458,74 +461,49 @@ class ChartsUI(BaseUIComponent):
                                 created_at = missing_record['created_at'].iloc[0]
                                 category = missing_record['category'].iloc[0] 
                                 asset_name = missing_record['asset_name'].iloc[0]
-                                print(f"    ID {missing_id}: {created_at} | {category} | {asset_name}")
+                                self.logger.debug(f"    ID {missing_id}: {created_at} | {category} | {asset_name}")
                 
             except Exception as e:
-                print(f"DEBUG: Errore nel confronto con Excel: {e}")
+                self.logger.debug(f" Errore nel confronto con Excel: {e}")
             
-            print(f"DEBUG: Record caricati: {len(all_data)}")
+            self.logger.debug(f"Record caricati: {len(all_data)}")
             
             if all_data.empty:
                 self._show_no_data_message("Nessun dato disponibile")
                 return
             
             # 1. RACCOLTA DI TUTTE LE DATE UNICHE da created_at e updated_at
-            print(f"DEBUG: Analisi formati date:")
-            print(f"  - Prime 5 created_at grezze: {all_data['created_at'].head().tolist()}")
-            print(f"  - Ultime 5 created_at grezze: {all_data['created_at'].tail().tolist()}")
+            self.logger.debug(f" Analisi formati date:")
+            self.logger.debug(f"  - Prime 5 created_at grezze: {all_data['created_at'].head().tolist()}")
+            self.logger.debug(f"  - Ultime 5 created_at grezze: {all_data['created_at'].tail().tolist()}")
             
-            # PARSING FLESSIBILE delle date - prova più formati
-            def parse_flexible_dates(date_series, column_name):
-                parsed_dates = []
-                failed_dates = []
-                
-                for i, date_str in enumerate(date_series.dropna()):
-                    parsed = None
-                    original_str = str(date_str)
-                    
-                    # Prova diversi formati
-                    formats_to_try = [
-                        '%Y-%m-%d',     # 2004-05-21
-                        '%d-%m-%Y',     # 21-05-2004  
-                        '%d/%m/%Y',     # 21/05/2004
-                        '%Y/%m/%d',     # 2004/05/21
-                        '%m/%d/%Y',     # 05/21/2004
-                        '%d.%m.%Y',     # 21.05.2004
-                        '%Y.%m.%d'      # 2004.05.21
-                    ]
-                    
-                    for fmt in formats_to_try:
-                        try:
-                            parsed = pd.to_datetime(original_str, format=fmt)
-                            break
-                        except:
-                            continue
-                    
-                    if parsed is None:
-                        # Ultimo tentativo: parsing automatico
-                        try:
-                            parsed = pd.to_datetime(original_str, infer_datetime_format=True)
-                        except:
-                            failed_dates.append((i, original_str))
-                            continue
-                    
-                    parsed_dates.append(parsed)
-                
-                print(f"  - {column_name}: {len(parsed_dates)} valide, {len(failed_dates)} fallite")
-                if failed_dates:
-                    print(f"    Date fallite: {failed_dates}")
-                    
-                return pd.Series(parsed_dates)
+            # PARSING CENTRALIZZATO delle date usando il nuovo sistema
+            date_manager = get_date_manager()
+
+            def parse_dates_centralized(date_series, column_name):
+                """Parsing ottimizzato usando il sistema centralizzato"""
+                valid_dates = []
+                failed_count = 0
+
+                for date_value in date_series.dropna():
+                    parsed = date_manager.parse_date(date_value, strict=False)
+                    if parsed:
+                        valid_dates.append(parsed)
+                    else:
+                        failed_count += 1
+
+                self.logger.debug(f"  - {column_name}: {len(valid_dates)} valide, {failed_count} fallite")
+                return pd.Series(valid_dates)
+
+            created_dates = parse_dates_centralized(all_data['created_at'], 'created_at')
+            updated_dates = parse_dates_centralized(all_data['updated_at'], 'updated_at')
             
-            created_dates = parse_flexible_dates(all_data['created_at'], 'created_at')
-            updated_dates = parse_flexible_dates(all_data['updated_at'], 'updated_at')
-            
-            print(f"DEBUG: Date created_at: {len(created_dates)} valide")
-            print(f"DEBUG: Date updated_at: {len(updated_dates)} valide")
+            self.logger.debug(f" Date created_at: {len(created_dates)} valide")
+            self.logger.debug(f" Date updated_at: {len(updated_dates)} valide")
             if len(created_dates) > 0:
-                print(f"DEBUG: Range created_at: {created_dates.min()} - {created_dates.max()}")
+                self.logger.debug(f" Range created_at: {created_dates.min()} - {created_dates.max()}")
             if len(updated_dates) > 0:
-                print(f"DEBUG: Range updated_at: {updated_dates.min()} - {updated_dates.max()}")
+                self.logger.debug(f" Range updated_at: {updated_dates.min()} - {updated_dates.max()}")
             
             # Lista univoca di date senza duplicati
             all_dates = sorted(set(created_dates.tolist() + updated_dates.tolist()))
@@ -543,11 +521,11 @@ class ChartsUI(BaseUIComponent):
                         filtered_dates.append(date)
                 
                 all_dates = filtered_dates
-                print(f"DEBUG: Filtro temporale applicato: {start_year_int}-{end_year_int}")
+                self.logger.debug(f" Filtro temporale applicato: {start_year_int}-{end_year_int}")
             
-            print(f"DEBUG: Date univoche totali: {len(all_dates)}")
-            print(f"DEBUG: Prima data: {all_dates[0] if all_dates else 'N/A'}")
-            print(f"DEBUG: Ultima data: {all_dates[-1] if all_dates else 'N/A'}")
+            self.logger.debug(f" Date univoche totali: {len(all_dates)}")
+            self.logger.debug(f" Prima data: {all_dates[0] if all_dates else 'N/A'}")
+            self.logger.debug(f" Ultima data: {all_dates[-1] if all_dates else 'N/A'}")
             
             if not all_dates:
                 self._show_no_data_message("Nessuna data valida trovata nel range selezionato")
@@ -648,21 +626,21 @@ class ChartsUI(BaseUIComponent):
                             x_dates = category_data.index
                             y_values = category_data.values
                             
-                            # Linea semplice con interpolazione numpy
+                            # Linea semplice con interpolazione numpy - primo piano
                             ax.plot(x_dates, y_values, 
                                    color=colors[i], linewidth=2.5, alpha=0.9, label=category,
-                                   antialiased=True, marker='o', markersize=6)
+                                   antialiased=True, marker='o', markersize=6, zorder=3)
                             
-                            # Markers sui punti originali
+                            # Markers sui punti originali - primo piano
                             ax.scatter(x_dates, y_values, color=colors[i], s=40, zorder=5,
                                      edgecolors='white', linewidths=1.5, alpha=1.0)
                         else:
-                            # Linea normale per pochi punti
+                            # Linea normale per pochi punti - primo piano
                             ax.plot(category_data.index, category_data.values, 
                                    marker='o', label=category, color=colors[i], 
                                    linewidth=2.5, markersize=5, alpha=0.9,
                                    markerfacecolor=colors[i], markeredgecolor='white', markeredgewidth=1,
-                                   antialiased=True)
+                                   antialiased=True, zorder=3)
                         
                         lines_added.append(f"Categoria: {category}")
             
@@ -671,10 +649,10 @@ class ChartsUI(BaseUIComponent):
             # Mostra totale solo dove c'è almeno una categoria con valore
             total_values = total_values[total_values > 0]
             
-            print(f"DEBUG GRAFICO:")
-            print(f"  - Linee categorie: {len(lines_added)}")
-            print(f"  - Punti totale: {len(total_values)}")
-            print(f"  - Valore finale totale: €{total_values.iloc[-1]:,.2f}" if len(total_values) > 0 else "  - Nessun valore totale")
+            self.logger.debug("GRAFICO:")
+            self.logger.debug(f"  - Linee categorie: {len(lines_added)}")
+            self.logger.debug(f"  - Punti totale: {len(total_values)}")
+            self.logger.debug(f"  - Valore finale totale: €{total_values.iloc[-1]:,.2f}" if len(total_values) > 0 else "  - Nessun valore totale")
             
             if len(total_values) > 0:
                 # Linea del totale semplice
@@ -682,25 +660,25 @@ class ChartsUI(BaseUIComponent):
                     x_dates_total = total_values.index
                     y_values_total = total_values.values
                     
-                    # Disegna linea totale semplice
+                    # Disegna linea totale più spessa sullo sfondo
                     ax.plot(x_dates_total, y_values_total, 
-                           color='black', linewidth=3.5, alpha=0.9, label='TOTALE',
-                           antialiased=True, marker='s', markersize=8)
+                           color='black', linewidth=5.0, alpha=0.7, label='TOTALE',
+                           antialiased=True, marker='s', markersize=8, zorder=1)
                     
-                    # Markers sui punti originali del totale
-                    ax.scatter(x_dates_total, y_values_total, color='black', s=60, marker='s', zorder=10,
+                    # Markers sui punti originali del totale - sopra le linee categorie
+                    ax.scatter(x_dates_total, y_values_total, color='black', s=60, marker='s', zorder=4,
                              edgecolors='white', linewidths=2, alpha=1.0)
                 else:
-                    # Linea normale per pochi punti
+                    # Linea normale per pochi punti - più spessa e sullo sfondo
                     ax.plot(total_values.index, total_values.values, 
                            marker='s', label='TOTALE', color='black', 
-                           linewidth=3.5, markersize=7, alpha=0.9,
+                           linewidth=5.0, markersize=7, alpha=0.7, zorder=1,
                            markerfacecolor='black', markeredgecolor='white', markeredgewidth=1.5,
                            antialiased=True)
                 
                 lines_added.append("TOTALE")
             
-            print(f"  - Linee totali nel grafico: {lines_added}")
+            self.logger.debug(f"  - Linee totali nel grafico: {lines_added}")
             
             # 5. FORMATTAZIONE DEL GRAFICO
             ax.set_title('Evoluzione Patrimonio per Categoria', fontsize=16, fontweight='bold', pad=20)
@@ -815,10 +793,10 @@ class ChartsUI(BaseUIComponent):
             
             # Salva il file
             wb.save(excel_file)
-            print(f"DEBUG: Salvata tabella debug nel foglio 'Debug_Timeline' di {excel_file}")
+            self.logger.debug(f" Salvata tabella debug nel foglio 'Debug_Timeline' di {excel_file}")
             
         except Exception as e:
-            print(f"Errore nel salvare tabella debug: {e}")
+            self.logger.error(f"Errore nel salvare tabella debug: {e}")
     
     def _verify_total_value(self, timeline_data):
         """Verifica che l'ultimo valore totale corrisponda a quello della navbar"""
@@ -835,15 +813,15 @@ class ChartsUI(BaseUIComponent):
             navbar_summary = self.portfolio_manager.get_portfolio_summary()
             navbar_total = navbar_summary['total_value']
             
-            print(f"DEBUG VERIFICA:")
-            print(f"  - Data più recente: {last_date.strftime('%Y-%m-%d')}")
-            print(f"  - Totale grafico: €{chart_total:,.2f}")
-            print(f"  - Totale navbar: €{navbar_total:,.2f}")
-            print(f"  - Differenza: €{abs(chart_total - navbar_total):,.2f}")
-            print(f"  - Corrispondenza: {'✓ SÌ' if abs(chart_total - navbar_total) < 0.01 else '✗ NO'}")
+            self.logger.debug("VERIFICA:")
+            self.logger.debug(f"  - Data più recente: {last_date.strftime('%Y-%m-%d')}")
+            self.logger.debug(f"  - Totale grafico: €{chart_total:,.2f}")
+            self.logger.debug(f"  - Totale navbar: €{navbar_total:,.2f}")
+            self.logger.debug(f"  - Differenza: €{abs(chart_total - navbar_total):,.2f}")
+            self.logger.debug(f"  - Corrispondenza: {'✓ SÌ' if abs(chart_total - navbar_total) < 0.01 else '✗ NO'}")
             
         except Exception as e:
-            print(f"Errore nella verifica del valore totale: {e}")
+            self.logger.error(f"Errore nella verifica del valore totale: {e}")
     
     def _parse_single_date(self, date_str):
         """Parsing flessibile di una singola data"""
@@ -863,17 +841,12 @@ class ChartsUI(BaseUIComponent):
             '%Y.%m.%d'      # 2004.05.21
         ]
         
-        for fmt in formats_to_try:
-            try:
-                return pd.to_datetime(original_str, format=fmt)
-            except:
-                continue
-        
-        # Ultimo tentativo: parsing automatico
-        try:
-            return pd.to_datetime(original_str, infer_datetime_format=True)
-        except:
-            return pd.NaT
+        # Usa il sistema centralizzato per parsing
+        date_manager = get_date_manager()
+        parsed = date_manager.parse_date(date_str, strict=False)
+        if parsed:
+            return pd.Timestamp(parsed)
+        return pd.NaT
     
     def _display_chart(self, fig):
         """Visualizza il grafico nel frame"""

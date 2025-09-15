@@ -12,6 +12,9 @@ import pandas as pd
 import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from logging_config import get_logger
+from security_validation import PathSecurityValidator, SecurityError
+from date_utils import get_date_manager, format_for_storage, parse_date
 
 class Asset:
     """
@@ -106,14 +109,29 @@ class PortfolioManager:
     
     def __init__(self, excel_file: str = "portfolio_data.xlsx"):
         """
-        Inizializza il gestore del portfolio
-        
+        Inizializza il gestore del portfolio con validazione sicurezza
+
         Args:
             excel_file: Nome del file Excel da usare (default: portfolio_data.xlsx)
         """
-        self.excel_file = excel_file
+        self.path_validator = PathSecurityValidator()
+        self.logger = get_logger('PortfolioManager')
+
+        # Valida il path del file in modo sicuro
+        try:
+            self.excel_file = str(self.path_validator.validate_portfolio_path(excel_file))
+            self.logger.info(f"Path portfolio validato: {self.excel_file}")
+        except SecurityError as e:
+            self.logger.error(f"Path portfolio non sicuro: {e}")
+            # Fallback su path sicuro di default
+            self.excel_file = str(self.path_validator.create_safe_portfolio_path("portfolio_data.xlsx"))
+            self.logger.warning(f"Usando path sicuro di fallback: {self.excel_file}")
+        except Exception as e:
+            self.logger.error(f"Errore validazione path: {e}")
+            self.excel_file = excel_file  # Fallback senza validazione
+
         self.categories = [
-            "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro", 
+            "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro",
             "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
         ]
         self._initialize_excel()
@@ -131,10 +149,7 @@ class PortfolioManager:
         pulisce solo le date e calcola i totali mancanti, senza rinomine aggressive."""
         try:
             df = pd.read_excel(self.excel_file, keep_default_na=False, na_values=[''])
-            try:
-                print(f"DEBUG load_data: columns={list(df.columns)} rows={len(df)}")
-            except Exception:
-                pass
+            self.logger.debug(f"load_data: columns={list(df.columns)} rows={len(df)}")
 
             # Pulisce le date (rimuove l'ora se presente)
             for col in ['created_at', 'updated_at']:
@@ -152,31 +167,17 @@ class PortfolioManager:
 
             return df
         except Exception as e:
-            print(f"Errore nel caricamento dati: {e}")
+            self.logger.error(f"Errore nel caricamento dati: {e}")
             return pd.DataFrame()
     
     def _clean_date_from_excel(self, date_value):
-        """Pulisce le date caricate da Excel rimuovendo l'ora"""
+        """Pulisce le date caricate da Excel usando il sistema centralizzato"""
         try:
-            # Gestisce valori NaN/None/vuoti
-            if pd.isna(date_value) or date_value == "" or date_value is None:
-                return ""
-            
-            # Se è un Timestamp pandas, convertilo solo alla data
-            if isinstance(date_value, pd.Timestamp):
-                return date_value.strftime('%Y-%m-%d')
-            
-            # Se è già una stringa
-            date_str = str(date_value).strip()
-            if date_str == "" or date_str.lower() in ['nan', 'nat', 'none']:
-                return ""
-            
-            # Se contiene l'ora, rimuovila
-            if ' ' in date_str:
-                return date_str.split(' ')[0]
-            
-            return date_str
-        except Exception:
+            date_manager = get_date_manager()
+            result = date_manager.format_for_storage(date_value)
+            return result if result else ""
+        except Exception as e:
+            self.logger.error(f"Errore pulizia data da Excel: {e}")
             return ""
     
     def save_data(self, df: pd.DataFrame):
@@ -185,7 +186,7 @@ class PortfolioManager:
             self.save_data_with_formulas(df)
             return True
         except Exception as e:
-            print(f"Errore nel salvataggio dati: {e}")
+            self.logger.error(f"Errore nel salvataggio dati: {e}")
             return False
     
     def save_data_with_formulas(self, df: pd.DataFrame):
@@ -246,34 +247,23 @@ class PortfolioManager:
                 ws[f'{updated_total_col}{row}'] = formula2
                 
         except (ValueError, IndexError) as e:
-            print(f"Errore nell'applicazione delle formule: {e}")
+            self.logger.error(f"Errore nell'applicazione delle formule: {e}")
         
         # Salva il file
         wb.save(self.excel_file)
     
     def _format_date_for_excel(self, date_value):
-        """Formatta le date per Excel (solo giorno, no ora)"""
-        if pd.isna(date_value) or date_value == "" or date_value is None:
-            return None
-            
+        """Formatta le date per Excel usando il sistema centralizzato"""
         try:
-            from datetime import datetime
-            
-            # Se è già una stringa in formato YYYY-MM-DD, mantienila
+            date_manager = get_date_manager()
+            return date_manager.format_for_excel(date_value)
+        except Exception as e:
+            self.logger.error(f"Errore formattazione data per Excel: {e}")
+            # Fallback per compatibilità
+            if pd.isna(date_value) or date_value == "" or date_value is None:
+                return None
             date_str = str(date_value)
-            if "-" in date_str and len(date_str.split()[0]) == 10:
-                return date_str.split()[0]  # Rimuove eventuale ora
-            
-            # Se è un timestamp pandas, convertilo
-            if isinstance(date_value, pd.Timestamp):
-                return date_value.strftime("%Y-%m-%d")
-            
-            # Prova parsing generale
-            parsed_date = pd.to_datetime(date_value)
-            return parsed_date.strftime("%Y-%m-%d")
-            
-        except (ValueError, TypeError):
-            return str(date_value).split()[0] if " " in str(date_value) else str(date_value)
+            return date_str.split()[0] if " " in date_str else date_str
     
     def add_asset(self, asset: Asset) -> bool:
         """
@@ -291,9 +281,10 @@ class PortfolioManager:
         if asset.id is None:
             asset.id = len(df) + 1 if not df.empty else 1
         
-        # Assegna data corrente se non specificata
+        # Assegna data corrente se non specificata usando sistema centralizzato
         if asset.created_at == "":
-            asset.created_at = datetime.now().strftime("%Y-%m-%d")
+            from date_utils import get_today_formatted
+            asset.created_at = get_today_formatted('storage')
         
         # Aggiunge l'asset al DataFrame
         new_row = pd.DataFrame([asset.to_dict()])
@@ -464,10 +455,7 @@ class PortfolioManager:
         latest_records = latest_records.sort_values('original_order')
         latest_records = latest_records.drop(columns=[c for c in ['asset_key','effective_date','original_order'] if c in latest_records.columns])
 
-        try:
-            print(f"DEBUG current_assets_only: input_rows={len(df)} output_rows={len(latest_records)}")
-        except Exception:
-            pass
+        self.logger.debug(f"current_assets_only: input_rows={len(df)} output_rows={len(latest_records)}")
         return latest_records
     
     def get_filtered_assets(self, filters: Dict[str, Any] = None) -> pd.DataFrame:
@@ -535,7 +523,7 @@ class PortfolioManager:
             from openpyxl import load_workbook
             from openpyxl.styles import Font
         except ImportError:
-            print("openpyxl non disponibile. Installa con: pip install openpyxl")
+            self.logger.error("openpyxl non disponibile. Installa con: pip install openpyxl")
             return
         
         try:
@@ -551,8 +539,8 @@ class PortfolioManager:
             # Record storici sono quelli non nell'insieme degli attuali
             historical_ids = set(df['id'].astype(int)) - current_ids
             
-            print(f"Record storici da colorare: {len(historical_ids)}")
-            print(f"Record attuali: {len(current_ids)}")
+            self.logger.info(f"Record storici da colorare: {len(historical_ids)}")
+            self.logger.info(f"Record attuali: {len(current_ids)}")
             
             # Apri il file Excel con openpyxl
             wb = load_workbook(self.excel_file)
@@ -580,9 +568,9 @@ class PortfolioManager:
             
             # Salva il file
             wb.save(self.excel_file)
-            print(f"File Excel aggiornato con {len(historical_ids)} record storici colorati di azzurro")
+            self.logger.info(f"File Excel aggiornato con {len(historical_ids)} record storici colorati di azzurro")
             
         except Exception as e:
-            print(f"Errore nella colorazione dei record storici: {e}")
+            self.logger.error(f"Errore nella colorazione dei record storici: {e}")
             import traceback
-            traceback.print_exc()
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")

@@ -14,6 +14,7 @@ from config import UIConfig, AssetConfig, Messages
 from utils import DataValidator, DateFormatter, ErrorHandler, safe_execute
 from models import Asset, PortfolioManager
 from ui_components import BaseUIComponent
+from logging_config import get_logger
 
 class FormState:
     """Gestione dello stato del form asset"""
@@ -64,6 +65,7 @@ class AssetForm(BaseUIComponent):
         self.form_vars: Dict[str, ctk.StringVar] = {}
         self.form_widgets: Dict[str, ctk.CTkWidget] = {}
         self.state = FormState()
+        self.logger = get_logger('AssetForm')
         
         # Riferimenti UI
         self.title_label = None
@@ -406,30 +408,30 @@ class AssetForm(BaseUIComponent):
     def _save_asset(self):
         """Salva l'asset corrente"""
         try:
-            print(f"DEBUG: Salvataggio asset - Modalità: {self.state.mode}, ID: {self.state.editing_asset_id}")
+            self.logger.debug(f"Salvataggio asset - Modalità: {self.state.mode}, ID: {self.state.editing_asset_id}")
             
             # Raccolta dati semplificata
             asset_data = self._collect_form_data()
             if not asset_data:
-                print("DEBUG: Raccolta dati fallita")
+                self.logger.error("Raccolta dati fallita")
                 return
             
-            print(f"DEBUG: Dati raccolti - Date: created_at='{asset_data.get('created_at')}', updated_at='{asset_data.get('updated_at')}'")
-            print(f"DEBUG: Valori numerici: created_amount={asset_data.get('created_amount')}, updated_amount={asset_data.get('updated_amount')}")
+            self.logger.debug(f"Dati raccolti - Date: created_at='{asset_data.get('created_at')}', updated_at='{asset_data.get('updated_at')}'")
+            self.logger.debug(f"Valori numerici: created_amount={asset_data.get('created_amount')}, updated_amount={asset_data.get('updated_amount')}")
             
             # Salvataggio in base alla modalità
             success = False
             
             if self.state.mode == 'create':
                 # Nuovo asset
-                print("DEBUG: Creazione nuovo asset")
+                self.logger.debug("Creazione nuovo asset")
                 asset = Asset(**asset_data)
                 success = self.portfolio_manager.add_asset(asset)
                 action = "creato"
             
             elif self.state.mode == 'edit':
                 # Modifica asset esistente - passa direttamente i dati raccolti
-                print(f"DEBUG: Modifica asset esistente ID {self.state.editing_asset_id}")
+                self.logger.debug(f"Modifica asset esistente ID {self.state.editing_asset_id}")
                 success = self.portfolio_manager.update_asset(
                     self.state.editing_asset_id, 
                     asset_data
@@ -438,7 +440,7 @@ class AssetForm(BaseUIComponent):
             
             elif self.state.mode == 'historical':
                 # Nuovo record storico
-                print("DEBUG: Creazione record storico")
+                self.logger.debug("Creazione record storico")
                 asset_data['updated_at'] = datetime.now().strftime("%Y-%m-%d")
                 asset = Asset(**asset_data)
                 success = self.portfolio_manager.add_asset(asset)
@@ -446,16 +448,16 @@ class AssetForm(BaseUIComponent):
             
             # Gestione risultato
             if success:
-                print(f"DEBUG: Salvataggio completato con successo - {action}")
+                self.logger.info(f"Salvataggio completato con successo - {action}")
                 messagebox.showinfo("Successo", f"Asset {action} con successo!")
                 self._clear_form()
                 self.trigger_callback('asset_saved', asset_data)
             else:
-                print("DEBUG: Salvataggio fallito")
+                self.logger.error("Salvataggio fallito")
                 messagebox.showerror("Errore", f"Impossibile salvare l'asset")
         
         except Exception as e:
-            print(f"DEBUG: Eccezione durante salvataggio: {e}")
+            self.logger.error(f"Eccezione durante salvataggio: {e}")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Errore", f"Errore durante salvataggio: {e}")

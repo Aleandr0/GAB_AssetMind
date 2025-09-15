@@ -14,6 +14,8 @@ from datetime import datetime
 from config import UIConfig, FieldMapping, AssetConfig, Messages
 from utils import DateFormatter, CurrencyFormatter, DataValidator, ErrorHandler, safe_execute
 from models import Asset, PortfolioManager
+from logging_config import get_logger
+from ui_performance import UIUpdateManager, LazyColumnResizer, UIRefreshOptimizer
 
 class BaseUIComponent:
     """Classe base per tutti i componenti UI"""
@@ -22,6 +24,7 @@ class BaseUIComponent:
         self.parent = parent
         self.portfolio_manager = portfolio_manager
         self.callbacks: Dict[str, Callable] = {}
+        self.logger = get_logger(self.__class__.__name__)
     
     def register_callback(self, event_name: str, callback: Callable):
         """Registra un callback per un evento"""
@@ -32,7 +35,7 @@ class BaseUIComponent:
         if event_name in self.callbacks:
             safe_execute(
                 lambda: self.callbacks[event_name](*args, **kwargs),
-                error_handler=lambda e: print(f"Errore callback {event_name}: {e}")
+                error_handler=lambda e: self.logger.error(f"Errore callback {event_name}: {e}")
             )
 
 class NavigationBar(BaseUIComponent):
@@ -184,7 +187,7 @@ class NavigationBar(BaseUIComponent):
                         hover_color=UIConfig.COLORS['primary_hover']
                     )
                 except Exception as e:
-                    print(f"Errore aggiornamento bottone attivo {page}: {e}")
+                    self.logger.error(f"Errore aggiornamento bottone attivo {page}: {e}")
             else:
                 # Bottoni inattivi - colore secondario  
                 try:
@@ -193,7 +196,7 @@ class NavigationBar(BaseUIComponent):
                         hover_color=UIConfig.COLORS['secondary_hover']
                     )
                 except Exception as e:
-                    print(f"Errore aggiornamento bottone inattivo {page}: {e}")
+                    self.logger.error(f"Errore aggiornamento bottone inattivo {page}: {e}")
     
     def update_values(self, total_value: float, selected_value: float = 0, percentage: float = 0):
         """Aggiorna i valori visualizzati"""
@@ -227,13 +230,18 @@ class PortfolioTable(BaseUIComponent):
         self.tree_style = None
         self.zoom_level = 100
         self.active_filter_popup = None
-        
+
         # Controlli UI
         self.records_btn = None
         self.assets_btn = None
         self.zoom_label = None
         self.v_scrollbar = None
         self.h_scrollbar = None
+
+        # Performance optimizers
+        self.update_manager = None
+        self.column_resizer = None
+        self.refresh_optimizer = None
     
     def create_table(self) -> ctk.CTkFrame:
         """Crea la tabella portfolio completa"""
@@ -243,6 +251,7 @@ class PortfolioTable(BaseUIComponent):
         self._create_controls()
         self._create_tree_view()
         self._setup_tree_style()
+        self._initialize_performance_optimizers()
         
         return self.table_frame
     
@@ -503,6 +512,17 @@ class PortfolioTable(BaseUIComponent):
             pass
             
         self.portfolio_tree.configure(style="Portfolio.Treeview")
+
+    def _initialize_performance_optimizers(self):
+        """Inizializza i sistemi di ottimizzazione performance"""
+        try:
+            self.update_manager = UIUpdateManager(self.parent)
+            self.column_resizer = LazyColumnResizer(self.portfolio_tree, self.parent)
+            self.refresh_optimizer = UIRefreshOptimizer(self.parent)
+
+            self.logger.info("Performance optimizers inizializzati")
+        except Exception as e:
+            self.logger.error(f"Errore inizializzazione performance optimizers: {e}")
     
     def _toggle_to_records(self):
         """Passa alla vista record (tutti)"""
@@ -538,44 +558,75 @@ class PortfolioTable(BaseUIComponent):
         """Aumenta lo zoom della tabella"""
         if self.zoom_level < 150:
             self.zoom_level += 10
-            self._apply_zoom()
-    
+            self._apply_zoom_optimized()
+
     def _zoom_out(self):
         """Diminuisce lo zoom della tabella"""
         if self.zoom_level > 70:
             self.zoom_level -= 10
-            self._apply_zoom()
+            self._apply_zoom_optimized()
     
-    def _apply_zoom(self):
-        """Applica il livello di zoom corrente"""
+    def _apply_zoom_optimized(self):
+        """Applica il livello di zoom corrente con ottimizzazioni"""
+        if not self.update_manager:
+            self._apply_zoom()  # Fallback
+            return
+
+        # Usa update manager per debounce dello zoom
+        self.update_manager.schedule_update(
+            "apply_zoom",
+            self._apply_zoom_immediate
+        )
+
+    def _apply_zoom_immediate(self):
+        """Applica zoom senza debouncing - versione ottimizzata"""
         base_font_size = 9
         new_font_size = int(base_font_size * (self.zoom_level / 100))
         new_height = int(25 * (self.zoom_level / 100))
-        
+
         self.tree_style.configure(
             "Portfolio.Treeview",
             font=("TkDefaultFont", new_font_size),
             rowheight=new_height
         )
+
         # Ricalcola altezza header con zoom
         zoom_padding_v = max(15, int(15 * (self.zoom_level / 100)))
         zoom_height = max(50, int(50 * (self.zoom_level / 100)))
-        
+
         self.tree_style.configure(
             "Portfolio.Treeview.Heading",
             font=("TkDefaultFont", new_font_size, "bold"),
             padding=[5, zoom_padding_v, 5, zoom_padding_v]
         )
-        
-        # Riapplica altezza header con zoom
+
         try:
             self.portfolio_tree.tk.call('style', 'configure', 'Portfolio.Treeview.Heading', '-rowheight', zoom_height)
         except:
             pass
-        
-        # Auto-ridimensiona le colonne in base al contenuto con nuovo zoom
-        self._auto_resize_columns()
-        
+
+        # Notifica column resizer del nuovo zoom
+        if self.column_resizer:
+            self.column_resizer.update_zoom_factor(self.zoom_level)
+
+        self.zoom_label.configure(text=f"{self.zoom_level}%")
+
+        # Usa refresh ottimizzato
+        if self.refresh_optimizer:
+            self.refresh_optimizer.smart_refresh()
+
+    def _apply_zoom(self):
+        """Metodo fallback per zoom senza ottimizzazioni"""
+        base_font_size = 9
+        new_font_size = int(base_font_size * (self.zoom_level / 100))
+        new_height = int(25 * (self.zoom_level / 100))
+
+        self.tree_style.configure(
+            "Portfolio.Treeview",
+            font=("TkDefaultFont", new_font_size),
+            rowheight=new_height
+        )
+
         self.zoom_label.configure(text=f"{self.zoom_level}%")
         self._update_scrollbars()
     
@@ -603,7 +654,7 @@ class PortfolioTable(BaseUIComponent):
                 self.portfolio_tree.column(col, width=new_width)
                 
         except Exception as e:
-            print(f"Errore aggiornamento larghezza colonne: {e}")
+            self.logger.error(f"Errore aggiornamento larghezza colonne: {e}")
     
     def _update_scrollbars(self):
         """Aggiorna la visibilità delle scrollbar"""
@@ -613,7 +664,7 @@ class PortfolioTable(BaseUIComponent):
                 self.h_scrollbar.grid() if self.portfolio_tree.xview() != (0.0, 1.0) else self.h_scrollbar.grid_remove()
             ])
         except Exception as e:
-            print(f"Errore aggiornamento scrollbar: {e}")
+            self.logger.error(f"Errore aggiornamento scrollbar: {e}")
     
     def _on_double_click(self, event):
         """Gestisce il doppio click su una riga"""
@@ -658,7 +709,7 @@ class PortfolioTable(BaseUIComponent):
             self._create_filter_popup(column, db_column, unique_values)
             
         except Exception as e:
-            print(f"Errore nel filtro colonna {column}: {e}")
+            self.logger.error(f"Errore nel filtro colonna {column}: {e}")
     
     def _create_filter_popup(self, display_column: str, db_column: str, values: list):
         """Crea il popup per il filtro colonna (stile legacy semplificato)"""
@@ -812,7 +863,7 @@ class PortfolioTable(BaseUIComponent):
             self.trigger_callback('data_filtered', df)
             
         except Exception as e:
-            print(f"Errore nell'applicazione filtri: {e}")
+            self.logger.error(f"Errore nell'applicazione filtri: {e}")
     
     def _update_column_headers(self):
         """Aggiorna le intestazioni delle colonne per mostrare i filtri attivi con asterisco più grande"""
@@ -861,7 +912,7 @@ class PortfolioTable(BaseUIComponent):
                     pass  # Colonna non esistente nel TreeView, ignora
                     
         except Exception as e:
-            print(f"Errore aggiornamento headers: {e}")
+            self.logger.error(f"Errore aggiornamento headers: {e}")
     
     def clear_all_filters(self):
         """Pulisce tutti i filtri attivi"""
@@ -872,14 +923,37 @@ class PortfolioTable(BaseUIComponent):
         if hasattr(self, 'active_filter_popup') and self.active_filter_popup:
             self.active_filter_popup.destroy()
             self.active_filter_popup = None
+
+    def cleanup_performance_optimizers(self):
+        """Pulisce i sistemi di ottimizzazione performance alla chiusura"""
+        try:
+            if self.update_manager:
+                self.update_manager.cleanup()
+
+            if self.column_resizer:
+                self.column_resizer.cached_widths.clear()
+
+            self.logger.debug("Performance optimizers cleanup completato")
+        except Exception as e:
+            self.logger.error(f"Errore cleanup performance optimizers: {e}")
     
     def update_data(self, df: pd.DataFrame):
         """Aggiorna i dati della tabella"""
+        self.logger.debug(f"update_data() chiamato con DataFrame: {len(df)} righe, vuoto: {df.empty}")
+        self.logger.debug(f"portfolio_tree exists: {self.portfolio_tree is not None}")
+        
         # Pulisce la tabella esistente
-        for item in self.portfolio_tree.get_children():
-            self.portfolio_tree.delete(item)
+        try:
+            children_count = len(self.portfolio_tree.get_children())
+            self.logger.debug(f"Cancellando {children_count} righe esistenti dalla tabella")
+            for item in self.portfolio_tree.get_children():
+                self.portfolio_tree.delete(item)
+            self.logger.debug("Tabella pulita con successo")
+        except Exception as e:
+            self.logger.error(f"Errore durante la pulizia della tabella: {e}")
         
         if df.empty:
+            self.logger.debug("DataFrame vuoto, esco senza aggiungere righe")
             return
         
         # Identifica i record storici se stiamo mostrando tutti i record
@@ -891,13 +965,33 @@ class PortfolioTable(BaseUIComponent):
             historical_ids = all_ids - current_ids
         
         # Inserisce i nuovi dati con colorazione appropriata
+        self.logger.debug(f"Iniziando inserimento {len(df)} righe nella tabella")
+        rows_inserted = 0
         for _, row in df.iterrows():
-            values = self._format_row_values(row)
-            item_id = self.portfolio_tree.insert("", "end", values=values)
-            
-            # Colora di azzurro i record storici
-            if int(row['id']) in historical_ids:
-                self.portfolio_tree.item(item_id, tags=('historical',))
+            try:
+                values = self._format_row_values(row)
+                if rows_inserted < 3:  # Log solo prime 3 righe per evitare spam
+                    self.logger.debug(f"Inserendo riga {rows_inserted + 1}: ID={row['id']}, Asset={row.get('asset_name', 'N/A')}")
+                item_id = self.portfolio_tree.insert("", "end", values=values)
+
+                # Colora di azzurro i record storici
+                if int(row['id']) in historical_ids:
+                    self.portfolio_tree.item(item_id, tags=('historical',))
+
+                rows_inserted += 1
+            except Exception as e:
+                self.logger.error(f"Errore inserimento riga {rows_inserted}: {e}")
+        
+        self.logger.debug(f"Inserimento completato: {rows_inserted} righe inserite su {len(df)} totali")
+        
+        # Verifica che le righe siano effettivamente visibili
+        children = self.portfolio_tree.get_children()
+        self.logger.debug(f"Righe nella tabella dopo inserimento: {len(children)}")
+        if len(children) > 0:
+            # Mostra solo la prima riga per verifica
+            child = children[0]
+            values = self.portfolio_tree.item(child, "values")
+            self.logger.debug(f"Prima riga visibile - ID: {values[0] if values else 'N/A'}")
         
         # Configura il tag per record storici
         self.portfolio_tree.tag_configure('historical', foreground='#0066CC')
@@ -905,10 +999,28 @@ class PortfolioTable(BaseUIComponent):
         # Aggiorna contatori
         self._update_button_counts(df)
         
-        # Auto-ridimensiona le colonne in base al contenuto
-        self._auto_resize_columns()
+        # Auto-ridimensiona le colonne con sistema ottimizzato
+        if self.column_resizer:
+            self.column_resizer.invalidate_cache()
+            self.column_resizer.schedule_resize()
+        else:
+            self._auto_resize_columns()  # Fallback
+
+        # Aggiorna scrollbar con debouncing
+        if self.update_manager:
+            self.update_manager.schedule_update("update_scrollbars", self._update_scrollbars)
+        else:
+            self._update_scrollbars()
         
-        self._update_scrollbars()
+        # Refresh ottimizzato dell'interfaccia
+        try:
+            self.portfolio_tree.update_idletasks()
+            self.parent.update_idletasks()
+            self.logger.debug("Refresh interfaccia completato")
+        except Exception as e:
+            self.logger.error(f"Errore durante refresh: {e}")
+
+        self.logger.debug("update_data() COMPLETATO")
     
     def _auto_resize_columns(self):
         """Auto-ridimensiona le colonne in base al contenuto (come Excel)"""
@@ -953,7 +1065,7 @@ class PortfolioTable(BaseUIComponent):
                 self.portfolio_tree.column(col, width=final_width)
                 
         except Exception as e:
-            print(f"Errore auto-resize colonne: {e}")
+            self.logger.error(f"Errore auto-resize colonne: {e}")
     
     def _format_row_values(self, row: pd.Series) -> tuple:
         """Formatta i valori di una riga per la visualizzazione"""
@@ -989,7 +1101,7 @@ class PortfolioTable(BaseUIComponent):
             safe_execute(lambda: self.records_btn.configure(text=f"Record {total_records}"))
             safe_execute(lambda: self.assets_btn.configure(text=f"Asset {current_assets}"))
         except Exception as e:
-            print(f"Errore aggiornamento contatori: {e}")
+            self.logger.error(f"Errore aggiornamento contatori: {e}")
     
     def get_visible_value(self) -> tuple[float, int]:
         """Calcola il valore delle righe visibili"""
@@ -1038,7 +1150,7 @@ class PortfolioTable(BaseUIComponent):
                 messagebox.showinfo("Info", "Nessun record da riordinare.")
                 return
             
-            print(f"DEBUG: Riordinamento di {len(df)} record...")
+            self.logger.info(f"Riordinamento di {len(df)} record...")
             
             # Converte le date in formato datetime per ordinamento corretto
             for date_col in ['updated_at', 'created_at']:
@@ -1053,10 +1165,10 @@ class PortfolioTable(BaseUIComponent):
                 ascending=True
             ).copy()
             
-            print(f"DEBUG: Record riordinati con successo")
-            print(f"  - Primi 3 record ordinati:")
-            for i, row in df_sorted.head(3).iterrows():
-                print(f"    {row.get('category', 'N/A')} | {row.get('position', 'N/A')} | {row.get('asset_name', 'N/A')} | {row.get('updated_at', 'N/A')}")
+            self.logger.info("Record riordinati con successo")
+            if not df_sorted.empty:
+                first_row = df_sorted.iloc[0]
+                self.logger.debug(f"Primo record: {first_row.get('category', 'N/A')} | {first_row.get('asset_name', 'N/A')}")
             
             # Salva il file Excel riordinato
             df_sorted.to_excel(self.portfolio_manager.excel_file, index=False)
@@ -1071,14 +1183,14 @@ class PortfolioTable(BaseUIComponent):
                 f"File aggiornato: {self.portfolio_manager.excel_file}"
             )
             
-            print(f"DEBUG: File Excel aggiornato e ricaricato")
+            self.logger.info("File Excel aggiornato e ricaricato")
             
         except Exception as e:
             error_msg = ErrorHandler.handle_file_error(e, "riordino record")
             messagebox.showerror("Errore Riordino", f"Errore durante il riordino:\n\n{error_msg}")
-            print(f"Errore riordino record: {e}")
+            self.logger.error(f"Errore riordino record: {e}")
             import traceback
-            traceback.print_exc()
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
     
     def _color_historical_records(self):
         """Colora i record storici di azzurro nel file Excel"""
@@ -1108,6 +1220,6 @@ class PortfolioTable(BaseUIComponent):
             from utils import ErrorHandler
             error_msg = ErrorHandler.handle_file_error(e, "colorazione record storici")
             messagebox.showerror("Errore Colorazione", f"Errore durante la colorazione:\n\n{error_msg}")
-            print(f"Errore colorazione record storici: {e}")
+            self.logger.error(f"Errore colorazione record storici: {e}")
             import traceback
-            traceback.print_exc()
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
