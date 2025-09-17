@@ -15,10 +15,11 @@ import numpy as np
 
 from config import UIConfig
 from utils import ErrorHandler, safe_execute
-from models import PortfolioManager
+from models import PortfolioManager, apply_global_filters
 from ui_components import BaseUIComponent
 from logging_config import get_logger
 from date_utils import get_date_manager
+from typing import Optional, Dict, Any
 
 class ChartsUI(BaseUIComponent):
     """Componente per la visualizzazione di grafici e analytics"""
@@ -30,6 +31,7 @@ class ChartsUI(BaseUIComponent):
         self.chart_frame = None
         self.chart_type = None
         self.current_chart = None
+        self._external_filtered_df = None
         self.start_year = None
         self.end_year = None
         self.available_years = []
@@ -230,8 +232,13 @@ class ChartsUI(BaseUIComponent):
             safe_execute(lambda: widget.destroy())
         
         try:
+            # Mostra banner filtri se presenti
+            self._render_filter_banner()
             # Carica i dati (solo asset più recenti per coerenza)
-            df = self.portfolio_manager.get_current_assets_only()
+            if isinstance(self._external_filtered_df, pd.DataFrame) and not self._external_filtered_df.empty:
+                df = self._external_filtered_df.copy()
+            else:
+                df = self.portfolio_manager.get_current_assets_only()
             
             if df.empty:
                 self._show_no_data_message()
@@ -429,6 +436,48 @@ class ChartsUI(BaseUIComponent):
         try:
             # Carica TUTTI i dati SENZA deduplicazione per mantenere la storia
             all_data = self.portfolio_manager.load_data()
+
+            # Applica direttamente i filtri di colonna alla storia completa, se disponibili
+            try:
+                if isinstance(self._filter_info, dict):
+                    col_filters = self._filter_info.get('column_filters')
+                    if col_filters:
+                        before = len(all_data)
+                        all_data = apply_global_filters(all_data, col_filters)
+                        self.logger.debug(f"Filtro colonne timeline: {before} -> {len(all_data)} righe")
+            except Exception as _e:
+                pass
+
+            # Limita la storia agli asset selezionati: usa il DF filtrato passato
+            try:
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    # Normalizzazione per confronto robusto
+                    def norm(series):
+                        return series.fillna('').astype(str).str.strip().str.lower()
+
+                    sel = df.copy()
+                    sel['asset_key'] = (
+                        norm(sel['category']) + '|' +
+                        norm(sel['asset_name']) + '|' +
+                        norm(sel['position']) + '|' +
+                        norm(sel['isin'])
+                    )
+
+                    # Prepara la stessa chiave su all_data e filtra
+                    all_data = all_data.copy()
+                    all_data['asset_key'] = (
+                        norm(all_data['category']) + '|' +
+                        norm(all_data['asset_name']) + '|' +
+                        norm(all_data['position']) + '|' +
+                        norm(all_data['isin'])
+                    )
+                    selected_keys = set(sel['asset_key'].unique())
+                    before = len(all_data)
+                    all_data = all_data[all_data['asset_key'].isin(selected_keys)].copy()
+                    self.logger.debug(f"Filtro timeline per selezione: {len(selected_keys)} chiavi, {before} -> {len(all_data)} righe")
+            except Exception as _e:
+                # In caso di problemi con il filtro, prosegui con tutti i dati
+                pass
             
             # VERIFICA: Confronta con il file Excel direttamente
             try:
@@ -532,11 +581,14 @@ class ChartsUI(BaseUIComponent):
                 return
             
             # 2. CALCOLO PATRIMONIO PER OGNI DATA E CATEGORIA
-            # Crea chiave univoca per identificare asset duplicati (stessa logica della navbar)
-            all_data['asset_key'] = (all_data['category'].fillna('') + '|' + 
-                                    all_data['asset_name'].fillna('') + '|' + 
-                                    all_data['position'].fillna('') + '|' + 
-                                    all_data['isin'].fillna(''))
+            # Crea chiave univoca per identificare asset duplicati (se non già presente)
+            if 'asset_key' not in all_data.columns:
+                all_data['asset_key'] = (
+                    all_data['category'].fillna('') + '|' +
+                    all_data['asset_name'].fillna('') + '|' +
+                    all_data['position'].fillna('') + '|' +
+                    all_data['isin'].fillna('')
+                )
             
             categories = all_data['category'].dropna().unique()
             timeline_data = {}
@@ -890,9 +942,70 @@ class ChartsUI(BaseUIComponent):
     def refresh_charts(self):
         """Aggiorna i grafici con i dati più recenti"""
         safe_execute(self._update_chart)
-    
+
+    def refresh_with_filtered_data(self, df: pd.DataFrame, filter_info: Optional[Dict[str, Any]] = None):
+        """Aggiorna i grafici usando un DataFrame filtrato e opzionalmente info filtri."""
+        try:
+            self._external_filtered_df = df.copy() if isinstance(df, pd.DataFrame) else None
+            if isinstance(filter_info, dict):
+                self._filter_info = filter_info
+        except Exception:
+            self._external_filtered_df = None
+        finally:
+            self.refresh_charts()
+
     def cleanup(self):
         """Pulisce le risorse utilizzate dai grafici"""
         if self.current_chart:
             safe_execute(lambda: self.current_chart.get_tk_widget().destroy())
         plt.close('all')
+
+    def _format_filter_summary(self) -> Optional[str]:
+        """Crea una stringa leggibile con i filtri attivi."""
+        try:
+            info = self._filter_info or {}
+            col_filters = info.get('column_filters') or {}
+            show_all = bool(info.get('show_all_records'))
+
+            if not col_filters and not show_all:
+                return None
+
+            from config import FieldMapping
+            parts = []
+            base_txt = 'Base: Tutti i record' if show_all else 'Base: Asset correnti'
+            parts.append(base_txt)
+
+            if col_filters:
+                filt_parts = []
+                for col, values in col_filters.items():
+                    disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
+                    vals = list(sorted({str(v) for v in values}))
+                    if len(vals) > 5:
+                        shown = ', '.join(vals[:5]) + f" +{len(vals)-5}"
+                    else:
+                        shown = ', '.join(vals)
+                    filt_parts.append(f"{disp} = {shown}")
+                parts.append('Filtri: ' + '; '.join(filt_parts))
+
+            return ' | '.join(parts)
+        except Exception:
+            return None
+
+    def _render_filter_banner(self):
+        """Mostra una label in alto con i filtri attivi, se presenti."""
+        summary = self._format_filter_summary()
+        if not summary:
+            return
+        try:
+            label = ctk.CTkLabel(
+                self.chart_frame,
+                text=f"🔍 {summary}",
+                font=ctk.CTkFont(**UIConfig.FONTS['text']),
+                text_color=UIConfig.COLORS['secondary']
+            )
+            label.pack(fill="x", padx=10, pady=(6, 0))
+        except Exception:
+            pass
+
+
+

@@ -25,7 +25,7 @@ import pandas as pd
 # Import dei moduli refactored
 from config import UIConfig, DatabaseConfig, Messages, get_application_directory
 from utils import ErrorHandler, DataCache, safe_execute
-from models import PortfolioManager
+from models import PortfolioManager, apply_global_filters
 from ui_components import NavigationBar, PortfolioTable
 from asset_form import AssetForm
 from charts_ui import ChartsUI
@@ -73,7 +73,14 @@ class GABAssetMind:
         self.asset_form: Optional[AssetForm] = None
         self.charts_ui: Optional[ChartsUI] = None
         self.export_ui: Optional[ExportUI] = None
-        
+
+        # Stato filtri globale (semplice, in memoria)
+        self.filter_state: Dict[str, Any] = {
+            'show_all_records': False,
+            'column_filters': {}
+        }
+        self._last_filtered_df: Optional[pd.DataFrame] = None
+
         # Inizializzazione
         self._initialize_portfolio_system()
         self._setup_ui()
@@ -161,6 +168,8 @@ class GABAssetMind:
         self.portfolio_table.register_callback('filter_requested', self._show_column_filter)
         self.portfolio_table.register_callback('data_filtered', self._on_data_filtered)
         self.portfolio_table.register_callback('data_changed', self._on_data_changed)
+        # Filtri globali
+        self.portfolio_table.register_callback('filters_changed', self._on_filters_changed)
         
         # Asset Form callbacks
         self.asset_form.register_callback('asset_saved', self._on_asset_saved)
@@ -215,28 +224,23 @@ class GABAssetMind:
         try:
             self.logger.debug(f"Inizio caricamento dati portfolio")
             self.logger.debug(f"Portfolio table exists: {self.portfolio_table is not None}")
-            
-            # Verifica cache
-            cache_key = f"portfolio_data_{self.current_portfolio_file}"
-            df = self.data_cache.get(cache_key)
-            
-            if df is None:
-                # Carica dati in base alla modalità di visualizzazione
-                if hasattr(self.portfolio_table, 'show_all_records') and self.portfolio_table.show_all_records:
-                    self.logger.debug("Caricando tutti i record")
-                    df = self.portfolio_manager.load_data()
-                else:
-                    self.logger.debug("Caricando solo asset correnti")
-                    df = self.portfolio_manager.get_current_assets_only()
 
-                self.logger.debug(f"Dati caricati: {len(df)} righe")
-                if not df.empty:
-                    self.logger.debug(f"Colonne disponibili: {list(df.columns)}")
-                
-                # Cache dei dati
-                self.data_cache.set(cache_key, df)
+            # Carica base DF secondo stato globale e applica filtri globali
+            base_show_all = bool(self.filter_state.get('show_all_records'))
+            if base_show_all:
+                self.logger.debug("Base: tutti i record")
+                df_base = self.portfolio_manager.load_data()
             else:
-                self.logger.debug(f"Dati dalla cache: {len(df)} righe")
+                self.logger.debug("Base: asset correnti")
+                df_base = self.portfolio_manager.get_current_assets_only()
+
+            df = apply_global_filters(df_base, self.filter_state.get('column_filters'))
+            self._last_filtered_df = df.copy() if isinstance(df, pd.DataFrame) else None
+
+            # Log semplice sui dati caricati
+            self.logger.debug(f"Dati caricati: {len(df)} righe")
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                self.logger.debug(f"Colonne disponibili: {list(df.columns)}")
             
             # Aggiorna componenti
             if self.portfolio_table:
@@ -258,6 +262,12 @@ class GABAssetMind:
             else:
                 self.logger.error("PROBLEMA - portfolio_table è None!")
                 
+            # Aggiorna componenti consumatori del DF filtrato
+            if self.charts_ui and hasattr(self.charts_ui, 'refresh_with_filtered_data'):
+                self.charts_ui.refresh_with_filtered_data(df, self.filter_state)
+            if self.export_ui and hasattr(self.export_ui, 'refresh_with_filtered_data'):
+                self.export_ui.refresh_with_filtered_data(df, self.filter_state)
+
             self._update_navbar_values()
             
         except Exception as e:
@@ -265,6 +275,22 @@ class GABAssetMind:
             self.logger.error(f"Errore caricamento dati: {error_msg}")
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
+
+    def _on_filters_changed(self, payload: Dict[str, Any]):
+        """Riceve filtri dalla tabella e aggiorna lo stato globale + refresh componenti"""
+        try:
+            if not isinstance(payload, dict):
+                return
+            # Aggiorna stato
+            if 'column_filters' in payload and isinstance(payload['column_filters'], dict):
+                self.filter_state['column_filters'] = payload['column_filters']
+            if 'show_all_records' in payload:
+                self.filter_state['show_all_records'] = bool(payload['show_all_records'])
+
+            # Ricarica i dati filtrati e aggiorna UI (nav, table, charts, export)
+            self._load_portfolio_data()
+        except Exception as e:
+            self.logger.error(f"Errore gestione filters_changed: {e}")
     
     def _update_navbar_values(self):
         """Aggiorna i valori mostrati nella navbar"""
@@ -287,6 +313,14 @@ class GABAssetMind:
                 if visible_value == total_value or percentage >= 99.9:
                     percentage = 100.0
                 self.navbar.update_values(total_value, visible_value, percentage)
+                # Aggiorna contatori semplici: Record Totali e Asset Correnti
+                try:
+                    total_records_count = len(self.portfolio_manager.load_data())
+                    current_assets_count = len(self.portfolio_manager.get_current_assets_only())
+                except Exception:
+                    total_records_count = 0
+                    current_assets_count = 0
+                self.navbar.update_counts(total_records_count, current_assets_count)
                 
         except Exception as e:
             self.logger.error(f"Errore aggiornamento valori navbar: {e}")
@@ -406,7 +440,8 @@ class GABAssetMind:
     # Event handlers per callbacks componenti
     def _on_view_changed(self, view_type: str):
         """Gestisce il cambio di vista nella tabella portfolio"""
-        self.data_cache.clear()  # Invalida cache
+        # Allinea stato globale show_all_records e ricarica
+        self.filter_state['show_all_records'] = (view_type == 'records')
         self._load_portfolio_data()
     
     def _on_asset_selected(self, asset_id: int):

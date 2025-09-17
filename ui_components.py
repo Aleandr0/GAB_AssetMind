@@ -46,6 +46,7 @@ class NavigationBar(BaseUIComponent):
         self.navbar_frame = None
         self.total_value_label = None
         self.selected_value_label = None
+        self.counts_label = None
         self.portfolio_selector = None
         self.current_portfolio_file = "portfolio_data.xlsx"
         self.nav_buttons = {}  # Dizionario per tracciare i bottoni di navigazione
@@ -85,6 +86,15 @@ class NavigationBar(BaseUIComponent):
             text_color=(UIConfig.COLORS['primary'], "#14375e")
         )
         self.selected_value_label.pack(pady=(0, 3))
+
+        # Contatori (Record Totali / Asset Correnti)
+        self.counts_label = ctk.CTkLabel(
+            values_frame,
+            text="Record Totali: 0 — Asset Correnti: 0",
+            font=ctk.CTkFont(**UIConfig.FONTS['small']),
+            text_color=(UIConfig.COLORS['primary'], "#14375e")
+        )
+        self.counts_label.pack(pady=(0, 3))
     
     def _create_portfolio_section(self):
         """Crea la sezione selezione portfolio (centro)"""
@@ -217,6 +227,12 @@ class NavigationBar(BaseUIComponent):
         """Aggiorna la lista dei portfolio disponibili"""
         safe_execute(lambda: self.portfolio_selector.configure(values=portfolio_files))
         safe_execute(lambda: self.portfolio_selector.set(current_file))
+
+    def update_counts(self, total_records: int, current_assets: int):
+        """Aggiorna i contatori di record e asset correnti"""
+        safe_execute(lambda: self.counts_label.configure(
+            text=f"Record Totali: {total_records} — Asset Correnti: {current_assets}"
+        ))
 
 class PortfolioTable(BaseUIComponent):
     """Componente tabella portfolio con filtri e controlli"""
@@ -818,8 +834,17 @@ class PortfolioTable(BaseUIComponent):
                 self.column_filters.pop(db_column, None)
             else:
                 self.column_filters[db_column] = selected_values
-            
-            # Aggiorna visualizzazione
+
+            # Notifica filtri cambiati (wiring globale)
+            try:
+                self.trigger_callback('filters_changed', {
+                    'column_filters': {k: set(v) for k, v in self.column_filters.items()},
+                    'show_all_records': bool(self.show_all_records),
+                })
+            except Exception:
+                pass
+
+            # Aggiorna visualizzazione locale (fallback) e header
             self._apply_filters()
             self._update_column_headers()
             

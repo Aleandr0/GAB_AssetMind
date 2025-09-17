@@ -347,9 +347,12 @@ class AssetForm(BaseUIComponent):
             # 2. Prepara i dati per la duplicazione
             asset_data = asset.to_dict()
             
-            # 3. Trova prima posizione libera
+            # 3. Trova il prossimo ID disponibile (semplice e sicuro)
             df = self.portfolio_manager.load_data()
-            next_id = len(df) + 1 if not df.empty else 1
+            try:
+                next_id = int(df['id'].max()) + 1 if not df.empty else 1
+            except Exception:
+                next_id = len(df) + 1 if not df.empty else 1
             asset_data['id'] = next_id
             
             # 4. Riscrive nella prima posizione libera
@@ -439,12 +442,14 @@ class AssetForm(BaseUIComponent):
                 action = "aggiornato"
             
             elif self.state.mode == 'historical':
-                # Nuovo record storico
-                self.logger.debug("Creazione record storico")
+                # Aggiornamento semplice sullo stesso ID (no inserto duplicato)
+                self.logger.debug("Aggiornamento in modalità storico (riscrive stesso ID)")
                 asset_data['updated_at'] = datetime.now().strftime("%Y-%m-%d")
-                asset = Asset(**asset_data)
-                success = self.portfolio_manager.add_asset(asset)
-                action = "registrato (nuovo record)"
+                success = self.portfolio_manager.update_asset(
+                    self.state.editing_asset_id,
+                    asset_data
+                )
+                action = "aggiornato"
             
             # Gestione risultato
             if success:

@@ -15,6 +15,26 @@ from typing import Optional, List, Dict, Any
 from logging_config import get_logger
 from security_validation import PathSecurityValidator, SecurityError
 from date_utils import get_date_manager, format_for_storage, parse_date
+from typing import Dict, Set, Optional
+
+def apply_global_filters(df: pd.DataFrame, column_filters: Optional[Dict[str, Set[str]]]) -> pd.DataFrame:
+    """Applica filtri di colonna in modo unificato (semplice, coerente con PortfolioTable).
+
+    - Confronta come stringhe con NA->'N/A'
+    - Ogni voce in column_filters è un insieme di valori ammessi per quella colonna
+    """
+    if df is None or df.empty or not column_filters:
+        return df if df is not None else pd.DataFrame()
+
+    filtered = df.copy()
+    try:
+        for column, allowed_values in column_filters.items():
+            if column in filtered.columns and allowed_values:
+                col_values = filtered[column].fillna('N/A').astype(str)
+                filtered = filtered[col_values.isin({str(v) for v in allowed_values})]
+        return filtered
+    except Exception:
+        return filtered
 
 class Asset:
     """
@@ -277,9 +297,14 @@ class PortfolioManager:
         """
         df = self.load_data()
         
-        # Assegna ID automatico se non specificato
+        # Assegna ID automatico se non specificato (semplice e robusto)
+        # Usa max(id) + 1 invece di len(df)+1 per evitare collisioni in caso di buchi/eliminazioni
         if asset.id is None:
-            asset.id = len(df) + 1 if not df.empty else 1
+            try:
+                next_id = int(df['id'].max()) + 1 if not df.empty else 1
+            except Exception:
+                next_id = (len(df) + 1) if not df.empty else 1
+            asset.id = next_id
         
         # Assegna data corrente se non specificata usando sistema centralizzato
         if asset.created_at == "":
