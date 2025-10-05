@@ -50,7 +50,7 @@ YAHOO_SYMBOL_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "name": "iShares EUR Inflation Linked Govt Bond UCITS ETF EUR Acc",
     },
     "IE00B4L5Y983": {
-        "symbols": ["IWDA.L", "SWDA.MI"],
+        "symbols": ["SWDA.MI", "IWDA.L"],  # Milano EUR prima
         "name": "iShares Core MSCI World UCITS ETF USD Acc",
     },
     "IE00B3XXRP09": {
@@ -58,15 +58,15 @@ YAHOO_SYMBOL_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "name": "Vanguard S&P 500 UCITS ETF USD Dist",
     },
     "IE00B5BMR087": {
-        "symbols": ["CSPX.L", "CSSPX.MI", "SXR8.DE"],
+        "symbols": ["CSSPX.MI", "SXR8.DE", "CSPX.L"],  # Milano/Xetra EUR prima, London GBP dopo
         "name": "iShares Core S&P 500 UCITS ETF USD Acc",
     },
     "IE00BFZXGZ54": {
-        "symbols": ["VWCE.DE", "EQAC.SW"],
-        "name": "Vanguard FTSE All-World UCITS ETF USD Acc",
+        "symbols": ["EQAC.MI", "EQAC.DE", "EQQQ.L"],  # Milano EUR (migliore match)
+        "name": "Invesco EQQQ Nasdaq-100 UCITS ETF Acc",
     },
     "IE00BK5BR626": {
-        "symbols": ["VHYA.L", "VHYL.L"],
+        "symbols": ["VGWE.DE", "VHYA.L", "VHYL.L"],
         "name": "Vanguard FTSE All-World High Dividend Yield UCITS ETF USD Acc",
     },
     "IE00BDBRDM35": {
@@ -74,15 +74,15 @@ YAHOO_SYMBOL_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "name": "iShares Global Aggregate Bond UCITS ETF EUR Hedged Acc",
     },
     "IE000BI8OT95": {
-        "symbols": ["MWRD.PA", "MWRD.MI"],
-        "name": "Amundi MSCI World UCITS ETF Acc",
+        "symbols": ["CW8.PA", "CW8.MI", "CW8.DE"],
+        "name": "Amundi Core MSCI World UCITS ETF Acc",
     },
     "IE000QU8JEH5": {
         "symbols": ["AI4U.MI"],
         "name": "Fineco AM MarketVector Artificial Intelligence Sustainable UCITS ETF",
     },
     "LU1900066033": {
-        "symbols": ["CHIP.SW"],
+        "symbols": ["CHIP.MI", "CHIP.SW"],  # Milano EUR prima, Swiss dopo
         "name": "Amundi MSCI Semiconductors UCITS ETF Acc",
     },
     "LU1437015735": {
