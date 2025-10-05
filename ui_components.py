@@ -8,12 +8,12 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import pandas as pd
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, Set
 from datetime import datetime
 
 from config import UIConfig, FieldMapping, AssetConfig, Messages
 from utils import DateFormatter, CurrencyFormatter, DataValidator, ErrorHandler, safe_execute
-from models import Asset, PortfolioManager
+from models import Asset, PortfolioManager, MANUAL_UPDATE_NOTE
 from logging_config import get_logger
 from ui_performance import UIUpdateManager, LazyColumnResizer, UIRefreshOptimizer
 
@@ -95,7 +95,7 @@ class NavigationBar(BaseUIComponent):
             text_color=(UIConfig.COLORS['primary'], "#14375e")
         )
         self.counts_label.pack(pady=(0, 3))
-    
+
     def _create_portfolio_section(self):
         """Crea la sezione selezione portfolio (centro)"""
         portfolio_section = ctk.CTkFrame(self.navbar_frame, fg_color="transparent")
@@ -141,7 +141,7 @@ class NavigationBar(BaseUIComponent):
         """Crea i bottoni di navigazione (destra)"""
         nav_buttons_frame = ctk.CTkFrame(self.navbar_frame, fg_color="transparent")
         nav_buttons_frame.pack(side="right", padx=20, pady=7)
-        
+
         nav_buttons = [
             ("📊 Portfolio", "Portfolio"),
             ("📝 Asset", "Asset"),
@@ -171,7 +171,7 @@ class NavigationBar(BaseUIComponent):
             
             # Salva riferimento al bottone
             self.nav_buttons[page] = btn
-    
+
     def _on_page_changed(self, page: str):
         """Gestisce il cambio di pagina e aggiorna l'evidenziazione dei bottoni"""
         self.current_page = page
@@ -253,11 +253,17 @@ class PortfolioTable(BaseUIComponent):
         self.zoom_label = None
         self.v_scrollbar = None
         self.h_scrollbar = None
+        self.market_update_btn = None
 
         # Performance optimizers
         self.update_manager = None
         self.column_resizer = None
         self.refresh_optimizer = None
+        self.alert_row_ids: Dict[str, Set[int]] = {
+            "price_alert": set(),
+            "nav_issue": set(),
+            "manual_issue": set(),
+        }
     
     def create_table(self) -> ctk.CTkFrame:
         """Crea la tabella portfolio completa"""
@@ -365,7 +371,19 @@ class PortfolioTable(BaseUIComponent):
         )
         sort_btn.pack(side="left", padx=(10, 0))
         
-        # Pulsante Colora Storici 
+        # Pulsante Aggiorna Prezzi
+        self.market_update_btn = ctk.CTkButton(
+            toggle_frame,
+            text="🔁 Aggiorna Prezzi",
+            command=self._on_market_update,
+            **UIConfig.BUTTON_SIZES['medium'],
+            font=ctk.CTkFont(**UIConfig.FONTS['button']),
+            fg_color=UIConfig.COLORS['success'],
+            hover_color=UIConfig.COLORS['success_hover']
+        )
+        self.market_update_btn.pack(side="left", padx=(10, 0))
+
+        # Pulsante Colora Storici
         color_btn = ctk.CTkButton(
             toggle_frame,
             text="🎨 Colora Storici",
@@ -443,9 +461,9 @@ class PortfolioTable(BaseUIComponent):
         self._update_column_headers()
     
     def _configure_columns(self, columns: tuple):
-        """Configura le colonne della tabella"""
-        # Larghezze aumentate per garantire leggibilità completa dei titoli
-        column_widths = {
+        """Configura le colonne della tabella con auto-fit iniziale"""
+        # Larghezze base per calcolo iniziale
+        self.base_column_widths = {
             "ID": 60, "Category": 120, "Position": 120, "Asset Name": 200,
             "ISIN": 80, "Ticker": 80, "Risk Level": 120,
             "Created At": 120, "Created Amount": 160, "Created Unit Price": 140,
@@ -454,12 +472,12 @@ class PortfolioTable(BaseUIComponent):
             "Accumulation Plan": 180, "Accumulation Amount": 180,
             "Income Per Year": 160, "Rental Income": 140, "Note": 250
         }
-        
-        # Titoli su una riga ma abbreviati per garantire leggibilità
+
+        # Titoli colonne
         column_headers = {
             "ID": "ID ▼",
             "Category": "Category ▼",
-            "Position": "Position ▼", 
+            "Position": "Position ▼",
             "Asset Name": "Asset Name ▼",
             "ISIN": "ISIN ▼",
             "Ticker": "Ticker ▼",
@@ -478,12 +496,12 @@ class PortfolioTable(BaseUIComponent):
             "Rental Income": "Rental Income ▼",
             "Note": "Note ▼"
         }
-        
+
         for col in columns:
-            width = column_widths.get(col, 120)
+            width = self.base_column_widths.get(col, 120)
             header_text = column_headers.get(col, f"{col}\n▼")
             self.portfolio_tree.heading(col, text=header_text, anchor="w")
-            self.portfolio_tree.column(col, width=width, anchor="w")
+            self.portfolio_tree.column(col, width=width, anchor="w", stretch=False)
     
     def _setup_tree_style(self):
         """Configura lo stile del TreeView"""
@@ -621,11 +639,17 @@ class PortfolioTable(BaseUIComponent):
         except:
             pass
 
+        # Aggiorna larghezza colonne proporzionalmente allo zoom
+        self._update_column_widths()
+
         # Notifica column resizer del nuovo zoom
         if self.column_resizer:
             self.column_resizer.update_zoom_factor(self.zoom_level)
 
         self.zoom_label.configure(text=f"{self.zoom_level}%")
+
+        # Aggiorna scrollbar per mostrare quella orizzontale se necessario
+        self._update_scrollbars()
 
         # Usa refresh ottimizzato
         if self.refresh_optimizer:
@@ -649,36 +673,37 @@ class PortfolioTable(BaseUIComponent):
     def _update_column_widths(self):
         """Aggiorna le larghezze delle colonne proporzionalmente al zoom"""
         try:
-            # Larghezze base delle colonne (aggiornate per leggibilità)
-            base_column_widths = {
-                "ID": 60, "Category": 120, "Position": 120, "Asset Name": 200,
-                "ISIN": 80, "Ticker": 80, "Risk Level": 120,
-                "Created At": 120, "Created Amount": 160, "Created Unit Price": 140,
-                "Created Total Value": 150, "Updated At": 120, "Updated Amount": 160,
-                "Updated Unit Price": 140, "Updated Total Value": 150,
-                "Accumulation Plan": 180, "Accumulation Amount": 180,
-                "Income Per Year": 160, "Rental Income": 140, "Note": 250
-            }
-            
             # Calcola il fattore di zoom
             zoom_factor = self.zoom_level / 100
-            
+
             # Aggiorna le larghezze di tutte le colonne
             for col in self.portfolio_tree['columns']:
-                base_width = base_column_widths.get(col, 120)
+                base_width = self.base_column_widths.get(col, 120)
                 new_width = int(base_width * zoom_factor)
                 self.portfolio_tree.column(col, width=new_width)
-                
+
+            self.logger.debug(f"Larghezze colonne aggiornate con zoom {self.zoom_level}%")
+
         except Exception as e:
             self.logger.error(f"Errore aggiornamento larghezza colonne: {e}")
     
     def _update_scrollbars(self):
-        """Aggiorna la visibilità delle scrollbar"""
+        """Aggiorna la visibilità delle scrollbar (sempre mostrate se necessarie)"""
         try:
-            self.parent.after(50, lambda: [
-                self.v_scrollbar.grid() if self.portfolio_tree.yview() != (0.0, 1.0) else self.v_scrollbar.grid_remove(),
-                self.h_scrollbar.grid() if self.portfolio_tree.xview() != (0.0, 1.0) else self.h_scrollbar.grid_remove()
-            ])
+            # Forza aggiornamento dopo un breve delay per permettere al TreeView di calcolare le dimensioni
+            def update():
+                try:
+                    # Mostra scrollbar verticale se c'è contenuto scrollabile
+                    if self.portfolio_tree.yview() != (0.0, 1.0):
+                        self.v_scrollbar.grid()
+
+                    # Mostra scrollbar orizzontale se c'è contenuto scrollabile
+                    if self.portfolio_tree.xview() != (0.0, 1.0):
+                        self.h_scrollbar.grid()
+                except:
+                    pass
+
+            self.parent.after(100, update)
         except Exception as e:
             self.logger.error(f"Errore aggiornamento scrollbar: {e}")
     
@@ -942,9 +967,19 @@ class PortfolioTable(BaseUIComponent):
     def clear_all_filters(self):
         """Pulisce tutti i filtri attivi"""
         self.column_filters.clear()
+
+        # Notifica filtri rimossi (wiring globale) - IMPORTANTE per aggiornare grafici!
+        try:
+            self.trigger_callback('filters_changed', {
+                'column_filters': {},
+                'show_all_records': bool(self.show_all_records),
+            })
+        except Exception as e:
+            self.logger.error(f"Errore notifica clear_all_filters: {e}")
+
         self._apply_filters()
         self._update_column_headers()
-        
+
         if hasattr(self, 'active_filter_popup') and self.active_filter_popup:
             self.active_filter_popup.destroy()
             self.active_filter_popup = None
@@ -999,9 +1034,33 @@ class PortfolioTable(BaseUIComponent):
                     self.logger.debug(f"Inserendo riga {rows_inserted + 1}: ID={row['id']}, Asset={row.get('asset_name', 'N/A')}")
                 item_id = self.portfolio_tree.insert("", "end", values=values)
 
-                # Colora di azzurro i record storici
-                if int(row['id']) in historical_ids:
-                    self.portfolio_tree.item(item_id, tags=('historical',))
+                tags: Set[str] = set()
+                row_id: Optional[int] = None
+                try:
+                    row_id = int(row['id'])
+                except (TypeError, ValueError, KeyError):
+                    row_id = None
+
+                if row_id is not None and row_id in historical_ids:
+                    tags.add('historical')
+
+                note_value = str(row.get('note') or '')
+                note_upper = note_value.upper()
+                if 'PRICE ALERT' in note_upper:
+                    tags.add('price_alert')
+                if MANUAL_UPDATE_NOTE.upper() in note_upper:
+                    tags.add('manual_issue')
+
+                if row_id is not None:
+                    if row_id in self.alert_row_ids.get('price_alert', set()):
+                        tags.add('price_alert')
+                    if row_id in self.alert_row_ids.get('nav_issue', set()):
+                        tags.add('nav_issue')
+                    if row_id in self.alert_row_ids.get('manual_issue', set()):
+                        tags.add('manual_issue')
+
+                if tags:
+                    self.portfolio_tree.item(item_id, tags=tuple(tags))
 
                 rows_inserted += 1
             except Exception as e:
@@ -1020,6 +1079,12 @@ class PortfolioTable(BaseUIComponent):
         
         # Configura il tag per record storici
         self.portfolio_tree.tag_configure('historical', foreground='#0066CC')
+        self.portfolio_tree.tag_configure('price_alert', foreground='#B22222', background='#FFE5E5')
+        self.portfolio_tree.tag_configure('nav_issue', foreground='#B22222', background='#FFE5E5')
+        self.portfolio_tree.tag_configure('manual_issue', foreground='#B22222', background='#FFE5E5')
+
+
+        self._apply_alert_tags(nav_changed=False, price_changed=False)
         
         # Aggiorna contatori
         self._update_button_counts(df)
@@ -1028,8 +1093,7 @@ class PortfolioTable(BaseUIComponent):
         if self.column_resizer:
             self.column_resizer.invalidate_cache()
             self.column_resizer.schedule_resize()
-        else:
-            self._auto_resize_columns()  # Fallback
+        # Nota: column_resizer è sempre inizializzato, quindi il fallback non è più necessario
 
         # Aggiorna scrollbar con debouncing
         if self.update_manager:
@@ -1047,58 +1111,13 @@ class PortfolioTable(BaseUIComponent):
 
         self.logger.debug("update_data() COMPLETATO")
     
-    def _auto_resize_columns(self):
-        """Auto-ridimensiona le colonne in base al contenuto (come Excel)"""
-        try:
-            import tkinter.font as tkfont
-            
-            # Font corrente per calcoli
-            current_font = tkfont.nametofont("TkDefaultFont")
-            font_size = int(9 * (self.zoom_level / 100))
-            current_font.configure(size=font_size)
-            
-            for col in self.portfolio_tree['columns']:
-                # Calcola larghezza header (su due righe)
-                header_text = self.portfolio_tree.heading(col, "text")
-                if isinstance(header_text, str):
-                    # Trova la riga più lunga nell'header
-                    header_lines = header_text.split('\n')
-                    max_header_width = max([current_font.measure(line) for line in header_lines]) if header_lines else 0
-                else:
-                    max_header_width = current_font.measure(str(header_text))
-                
-                # Calcola larghezza massima del contenuto
-                max_content_width = 0
-                for item in self.portfolio_tree.get_children():
-                    item_values = self.portfolio_tree.item(item, 'values')
-                    if item_values:
-                        col_index = list(self.portfolio_tree['columns']).index(col)
-                        if col_index < len(item_values):
-                            cell_text = str(item_values[col_index])
-                            content_width = current_font.measure(cell_text)
-                            max_content_width = max(max_content_width, content_width)
-                
-                # Larghezza finale: maggiore tra header e contenuto + padding
-                final_width = max(max_header_width, max_content_width) + 20  # 20px padding
-                
-                # Limiti min e max per evitare colonne troppo strette o troppo larghe
-                min_width = 60
-                max_width = 300
-                final_width = max(min_width, min(max_width, final_width))
-                
-                # Applica la nuova larghezza
-                self.portfolio_tree.column(col, width=final_width)
-                
-        except Exception as e:
-            self.logger.error(f"Errore auto-resize colonne: {e}")
-    
     def _format_row_values(self, row: pd.Series) -> tuple:
         """Formatta i valori di una riga per la visualizzazione"""
         return (
             row['id'],
             row['category'],
             str(row['position']) if pd.notna(row['position']) else "-",
-            str(row['asset_name'])[:20] + "..." if len(str(row['asset_name'])) > 20 else str(row['asset_name']),
+            str(row['asset_name']),  # Rimossa troncatura - auto-resize gestirà la larghezza
             str(row['isin']) if pd.notna(row['isin']) and str(row['isin']) != '' else "-",
             str(row['ticker']) if pd.notna(row['ticker']) and str(row['ticker']) != '' else "-",
             row['risk_level'],
@@ -1129,23 +1148,80 @@ class PortfolioTable(BaseUIComponent):
             self.logger.error(f"Errore aggiornamento contatori: {e}")
     
     def get_visible_value(self) -> tuple[float, int]:
-        """Calcola il valore delle righe visibili"""
-        visible_value = 0.0
-        visible_count = 0
-        
+        """
+        Calcola il valore delle righe visibili usando la stessa logica di deduplica di get_portfolio_summary()
+
+        IMPORTANTE: Ora usa direttamente i dati pandas invece di parsare stringhe dalla TreeView,
+        garantendo totale coerenza con get_portfolio_summary() ed eliminando errori di arrotondamento.
+        """
+        import pandas as pd
+
+        # Ottieni gli ID visibili dalla TreeView
+        visible_ids = []
         for child in self.portfolio_tree.get_children():
             item_values = self.portfolio_tree.item(child)['values']
-            if len(item_values) >= 15:
-                current_total = item_values[14]  # "Updated Total Value"
+            if len(item_values) > 0:
                 try:
-                    current_total_str = str(current_total).replace('€', '').replace(',', '').strip()
-                    if current_total_str and current_total_str != 'N/A':
-                        value = float(current_total_str)
-                        visible_value += value
-                        visible_count += 1
-                except (ValueError, TypeError):
+                    asset_id = int(item_values[0])  # Prima colonna = ID
+                    visible_ids.append(asset_id)
+                except (ValueError, TypeError, IndexError):
                     continue
-        
+
+        if not visible_ids:
+            return 0.0, 0
+
+        # Carica i dati completi dal portfolio manager
+        df = self.portfolio_manager.load_data()
+
+        if df.empty:
+            return 0.0, 0
+
+        # Filtra solo i record visibili nella TreeView
+        df_visible = df[df['id'].isin(visible_ids)].copy()
+
+        if df_visible.empty:
+            return 0.0, 0
+
+        # APPLICA LA STESSA LOGICA DI get_portfolio_summary() in models.py
+        # Normalizza i campi chiave per deduplica
+        def _norm(s):
+            if pd.isna(s):
+                return ''
+            val = str(s).strip()
+            if val.lower() in {'na','n/a','none','null','nan',''}:
+                return ''
+            return val
+
+        for key_col in ['category','asset_name','position','isin']:
+            if key_col in df_visible.columns:
+                df_visible[key_col] = df_visible[key_col].apply(_norm)
+            else:
+                df_visible[key_col] = ''
+
+        # Crea chiave asset unica (stessa logica di models.py)
+        df_visible['asset_key'] = (df_visible['category'] + '|' +
+                                   df_visible['asset_name'] + '|' +
+                                   df_visible['position'] + '|' +
+                                   df_visible['isin'])
+
+        # Converti date per ordinamento (stessa logica di models.py)
+        df_visible['effective_date'] = pd.to_datetime(
+            df_visible['updated_at'].replace(['', 'NA', 'N/A', 'na'], pd.NA).fillna(df_visible['created_at']),
+            format='%Y-%m-%d', errors='coerce'
+        )
+
+        # Per ogni asset unico, prendi solo il record con data più recente (stessa logica di models.py)
+        latest_records = df_visible.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
+
+        # Calcola il totale usando ESATTAMENTE la stessa formula di get_portfolio_summary()
+        visible_value = latest_records['updated_total_value'].fillna(latest_records['created_total_value']).sum()
+        visible_count = len(latest_records)
+
+        # Log per debug
+        if len(df_visible) != visible_count:
+            self.logger.debug(f"get_visible_value: {len(df_visible)} record visibili -> "
+                            f"{visible_count} asset deduplicati -> €{visible_value:,.2f}")
+
         return visible_value, visible_count
     
     def _sort_records(self):
@@ -1216,7 +1292,112 @@ class PortfolioTable(BaseUIComponent):
             self.logger.error(f"Errore riordino record: {e}")
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
-    
+
+    def _on_market_update(self):
+        """Richiede l'aggiornamento dei prezzi di mercato."""
+        self.trigger_callback('market_update_requested')
+
+    def set_market_update_state(self, is_running: bool):
+        """Aggiorna lo stato del pulsante di aggiornamento prezzi."""
+        if not self.market_update_btn:
+            return
+
+        new_state = "disabled" if is_running else "normal"
+        new_text = "⏳ Aggiornamento..." if is_running else "🔁 Aggiorna Prezzi"
+        safe_execute(lambda: self.market_update_btn.configure(state=new_state, text=new_text))
+
+    def mark_alert_rows(
+        self,
+        *,
+        price_alert_ids: Optional[List[Any]] = None,
+        nav_issue_ids: Optional[List[Any]] = None,
+        manual_issue_ids: Optional[List[Any]] = None,
+    ) -> None:
+        """Aggiorna l'evidenziazione degli asset con alert di prezzo, NAV o manuali."""
+        price_changed = price_alert_ids is not None
+        nav_changed = nav_issue_ids is not None
+        manual_changed = manual_issue_ids is not None
+
+        def _normalize(values: Optional[List[Any]]) -> Set[int]:
+            normalized: Set[int] = set()
+            for value in values or []:
+                try:
+                    normalized.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            return normalized
+
+        if price_changed:
+            self.alert_row_ids["price_alert"] = _normalize(price_alert_ids)
+        if nav_changed:
+            self.alert_row_ids["nav_issue"] = _normalize(nav_issue_ids)
+        if manual_changed:
+            self.alert_row_ids["manual_issue"] = _normalize(manual_issue_ids)
+
+        self._apply_alert_tags(nav_changed=nav_changed, price_changed=price_changed, manual_changed=manual_changed)
+
+    def _apply_alert_tags(self, *, nav_changed: bool = True, price_changed: bool = False, manual_changed: bool = False) -> None:
+        """Applica i tag di alert ai record mostrati nella tabella."""
+        if not self.portfolio_tree:
+            return
+
+        try:
+            items = self.portfolio_tree.get_children()
+        except Exception as exc:
+            self.logger.debug("Impossibile recuperare le righe della tabella: %s", exc)
+            return
+
+        nav_ids = self.alert_row_ids.get("nav_issue", set())
+        price_ids = self.alert_row_ids.get("price_alert", set())
+        manual_ids = self.alert_row_ids.get("manual_issue", set())
+
+        for item in items:
+            try:
+                values = self.portfolio_tree.item(item, "values")
+            except Exception as exc:
+                self.logger.debug("Impossibile leggere i valori della riga %s: %s", item, exc)
+                continue
+
+            row_id: Optional[int] = None
+            if values:
+                try:
+                    row_id = int(values[0])
+                except (TypeError, ValueError):
+                    row_id = None
+
+            try:
+                current_tags = set(self.portfolio_tree.item(item, "tags") or ())
+            except Exception as exc:
+                self.logger.debug("Impossibile leggere i tag della riga %s: %s", item, exc)
+                current_tags = set()
+
+            if row_id is not None:
+                if nav_changed:
+                    if row_id in nav_ids:
+                        current_tags.add("nav_issue")
+                    else:
+                        current_tags.discard("nav_issue")
+                elif row_id in nav_ids:
+                    current_tags.add("nav_issue")
+
+                if price_changed:
+                    if row_id in price_ids:
+                        current_tags.add("price_alert")
+                    else:
+                        current_tags.discard("price_alert")
+                elif row_id in price_ids:
+                    current_tags.add("price_alert")
+
+                if manual_changed:
+                    if row_id in manual_ids:
+                        current_tags.add("manual_issue")
+                    else:
+                        current_tags.discard("manual_issue")
+                elif row_id in manual_ids:
+                    current_tags.add("manual_issue")
+
+            self.portfolio_tree.item(item, tags=tuple(current_tags))
+
     def _color_historical_records(self):
         """Colora i record storici di azzurro nel file Excel"""
         try:
@@ -1248,3 +1429,10 @@ class PortfolioTable(BaseUIComponent):
             self.logger.error(f"Errore colorazione record storici: {e}")
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
+
+
+
+
+
+
+

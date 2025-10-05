@@ -203,6 +203,29 @@ ctk.set_default_color_theme("green")  # "blue", "green", "dark-blue"
 - **tkcalendar**: Widget calendario
 - **Pillow**: Gestione immagini
 - **numpy**: Calcoli matematici
+- **requests**: Client HTTP per servizi esterni
+- **twelvedata**: SDK ufficiale Twelve Data per prezzi di mercato
+
+## 🔁 Aggiornamento automatico dei prezzi
+
+L'app integra un pulsante **"🔁 Aggiorna Prezzi"** nella barra superiore che aggiorna il valore
+degli asset con ticker o ISIN utilizzando l'API di Twelve Data. Per abilitare la funzione:
+
+1. Crea un account gratuito su [Twelve Data](https://twelvedata.com/) e recupera la tua **API key**.
+2. Esporta la chiave nel sistema operativo prima di avviare l'applicazione:
+   ```bash
+   export TWELVE_DATA_API_KEY="la_tua_api_key"
+   ```
+   Su Windows PowerShell:
+   ```powershell
+   setx TWELVE_DATA_API_KEY "la_tua_api_key"
+   ```
+3. Installa le dipendenze aggiornate (`requests` e `twelvedata`) con `pip install -r requirements.txt`.
+4. Avvia l'app e premi il pulsante **"🔁 Aggiorna Prezzi"** per duplicare i record attuali con i
+   nuovi valori `updated_at` e `updated_unit_price` calcolati automaticamente.
+
+Se la chiave API non è configurata l'app mostra un avviso e non esegue aggiornamenti, evitando
+errori di rete o chiamate non autorizzate.
 
 ## 📊 Metriche Calcolate
 

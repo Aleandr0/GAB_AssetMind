@@ -11,30 +11,34 @@ Classi principali:
 import pandas as pd
 import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable, Set
 from logging_config import get_logger
 from security_validation import PathSecurityValidator, SecurityError
-from date_utils import get_date_manager, format_for_storage, parse_date
-from typing import Dict, Set, Optional
+from date_utils import get_date_manager, format_for_storage, parse_date, get_today_formatted
+from market_data import MarketDataError
+
+PRICE_OUTLIER_THRESHOLD = 0.05
+MANUAL_UPDATE_NOTE = "AssetMind - Da aggiornare manualmente"
+MANUAL_UPDATE_MESSAGE = "Aggiornamento manuale richiesto"
+
 
 def apply_global_filters(df: pd.DataFrame, column_filters: Optional[Dict[str, Set[str]]]) -> pd.DataFrame:
-    """Applica filtri di colonna in modo unificato (semplice, coerente con PortfolioTable).
-
-    - Confronta come stringhe con NA->'N/A'
-    - Ogni voce in column_filters è un insieme di valori ammessi per quella colonna
-    """
-    if df is None or df.empty or not column_filters:
+    """Applica filtri di colonna in modo coerente con la tabella portfolio."""
+    if df is None or getattr(df, "empty", True) or not column_filters:
         return df if df is not None else pd.DataFrame()
 
     filtered = df.copy()
     try:
         for column, allowed_values in column_filters.items():
-            if column in filtered.columns and allowed_values:
-                col_values = filtered[column].fillna('N/A').astype(str)
-                filtered = filtered[col_values.isin({str(v) for v in allowed_values})]
+            if not allowed_values or column not in filtered.columns:
+                continue
+            col_values = filtered[column].fillna('N/A').astype(str)
+            allowed = {str(value) for value in allowed_values}
+            filtered = filtered[col_values.isin(allowed)]
         return filtered
     except Exception:
         return filtered
+
 
 class Asset:
     """
@@ -190,6 +194,487 @@ class PortfolioManager:
             self.logger.error(f"Errore nel caricamento dati: {e}")
             return pd.DataFrame()
     
+
+
+
+    def update_market_prices(
+        self,
+        market_provider,
+        asset_ids: Optional[List[int]] = None,
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        """Aggiorna i prezzi duplicando i record e gestendo fallback multipli."""
+
+        summary: Dict[str, Any] = {
+            'updated': 0,
+            'skipped': [],
+            'errors': [],
+            'alerts': [],
+            'details': [],
+            'manual_updates': [],
+        }
+
+        def _notify_progress(event: Dict[str, Any]) -> None:
+            if not progress_callback:
+                return
+            try:
+                progress_callback(event)
+            except Exception:
+                pass
+
+        def _coerce_id(raw: Any) -> Optional[int]:
+            try:
+                return int(float(raw))
+            except (TypeError, ValueError):
+                return None
+
+        processed_assets = 0
+
+        def _notify_item(status: str, asset_id: Optional[int] = None, extra: Optional[Dict[str, Any]] = None) -> None:
+            event: Dict[str, Any] = {
+                'stage': 'item',
+                'status': status,
+                'processed': processed_assets,
+                'updated': summary['updated'],
+                'skipped': len(summary['skipped']),
+                'errors': len(summary['errors']),
+            }
+            if asset_id is not None:
+                event['asset_id'] = asset_id
+            if extra:
+                event.update(extra)
+            _notify_progress(event)
+
+        def _clean_str(value: Any) -> str:
+            if pd.isna(value) or value is None:
+                return ''
+            return str(value).strip()
+
+        def _to_positive_float(value: Any) -> float:
+            try:
+                if value in (None, '') or pd.isna(value):
+                    return 0.0
+                numeric = float(value)
+                return numeric if numeric > 0 else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _create_manual_placeholder(
+            asset_id: Optional[int],
+            raw_id: Any,
+            row: pd.Series,
+            reason_code: str,
+            message: Optional[str] = None,
+        ) -> bool:
+            nonlocal next_id
+            if asset_id is None:
+                return False
+
+            try:
+                mask = df_all['id'].astype(str) == str(raw_id)
+            except Exception:
+                return False
+            if not mask.any():
+                return False
+
+            placeholder = df_all[mask].iloc[-1].copy()
+            placeholder['id'] = next_id
+            placeholder['updated_at'] = today
+
+            existing_note = _clean_str(placeholder.get('note'))
+            note_parts = [part.strip() for part in existing_note.split('|') if part.strip()] if existing_note else []
+            if MANUAL_UPDATE_NOTE not in note_parts:
+                note_parts.append(MANUAL_UPDATE_NOTE)
+            if MANUAL_UPDATE_MESSAGE not in note_parts:
+                note_parts.append(MANUAL_UPDATE_MESSAGE)
+            placeholder['note'] = ' | '.join(note_parts) if note_parts else f'{MANUAL_UPDATE_NOTE} | {MANUAL_UPDATE_MESSAGE}'
+
+            new_rows.append(placeholder)
+            summary['updated'] += 1
+            summary['manual_updates'].append({
+                'id': asset_id,
+                'new_record_id': next_id,
+                'reason': reason_code,
+            })
+
+            symbol = _clean_str(placeholder.get('ticker')) or _clean_str(placeholder.get('isin')) or _clean_str(row.get('asset_name'))
+            price_value = _to_positive_float(placeholder.get('updated_unit_price')) or _to_positive_float(placeholder.get('created_unit_price')) or None
+
+            detail_entry: Dict[str, Any] = {
+                'id': asset_id,
+                'symbol': symbol,
+                'price': price_value if price_value is not None else None,
+                'currency': placeholder.get('currency'),
+                'new_record_id': next_id,
+                'manual': True,
+                'reason': reason_code,
+            }
+            summary['details'].append(detail_entry)
+
+            alert_entry: Dict[str, Any] = {
+                'id': asset_id,
+                'type': 'manual_update_required',
+                'reason': reason_code,
+                'symbol': symbol,
+            }
+            if message:
+                alert_entry['message'] = message
+            summary['alerts'].append(alert_entry)
+
+            next_id += 1
+            return True
+
+        def _maybe_pause(request_attempted: bool, row_position: int) -> None:
+            """
+            Implementa rate limiting per rispettare i limiti API TwelveData
+            TwelveData Free Plan: 8 richieste/minuto (480/ora)
+
+            Args:
+                request_attempted: True se è stata effettuata una richiesta API
+                row_position: Posizione corrente (1-indexed)
+            """
+            if not request_attempted:
+                return  # Nessuna richiesta = nessuna pausa necessaria
+
+            # TwelveData: 8 richieste/minuto
+            # Strategia: pausa di 8 secondi ogni 8 richieste (7.5 sec safety)
+            REQUESTS_PER_MINUTE = 8
+            PAUSE_SECONDS = 8  # Pausa sicura tra batch
+
+            if row_position % REQUESTS_PER_MINUTE == 0:
+                import time
+                self.logger.info(f"Rate limiting: pausa di {PAUSE_SECONDS}s dopo {row_position} richieste...")
+                time.sleep(PAUSE_SECONDS)
+
+        try:
+            df_all = self.load_data()
+        except Exception as exc:
+            self.logger.error(f"update_market_prices: impossibile caricare dati - {exc}")
+            summary['errors'].append({'id': None, 'error': str(exc)})
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        if df_all.empty:
+            self.logger.info("update_market_prices: nessun dato disponibile")
+            _notify_progress({'stage': 'start', 'total': 0})
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        try:
+            current_df = self.get_current_assets_only()
+        except Exception as exc:
+            self.logger.error(f"update_market_prices: errore calcolo asset correnti - {exc}")
+            summary['errors'].append({'id': None, 'error': str(exc)})
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        market_update_categories = {
+            'Criptovalute',
+            'ETF',
+            'Fondi di investimento',
+            'Azioni',
+            'Titoli di stato',
+        }
+        if not current_df.empty and 'category' in current_df.columns:
+            current_df = current_df[current_df['category'].isin(market_update_categories)]
+
+        if current_df.empty:
+            self.logger.info("update_market_prices: nessun asset corrente da aggiornare nelle categorie supportate")
+            _notify_progress({'stage': 'start', 'total': 0})
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        id_filter: Optional[Set[int]] = None
+        if asset_ids:
+            cleaned_ids: Set[int] = set()
+            for raw in asset_ids:
+                coerced = _coerce_id(raw)
+                if coerced is not None:
+                    cleaned_ids.add(coerced)
+            if cleaned_ids:
+                id_filter = cleaned_ids
+                current_df = current_df[current_df['id'].apply(lambda raw: _coerce_id(raw) in id_filter)]
+                if current_df.empty:
+                    self.logger.info("update_market_prices: nessun asset corrispondente alla selezione")
+                    _notify_progress({'stage': 'start', 'total': 0})
+                    _notify_progress({'stage': 'complete', 'summary': summary})
+                    return summary
+
+        total_rows = len(current_df)
+        _notify_progress({'stage': 'start', 'total': total_rows})
+
+        numeric_ids = pd.to_numeric(df_all['id'], errors='coerce').dropna()
+        next_id = int(numeric_ids.max()) + 1 if not numeric_ids.empty else 1
+        today = get_today_formatted('storage')
+
+        new_rows: List[pd.Series] = []
+
+        for row_index, (_, row) in enumerate(current_df.iterrows(), start=1):
+            raw_id = row.get('id')
+            asset_id = _coerce_id(raw_id)
+            if asset_id is None:
+                self.logger.warning(f"update_market_prices: ID non valido {raw_id}")
+                summary['skipped'].append({'id': raw_id, 'reason': 'invalid_id'})
+                processed_assets += 1
+                _notify_item('invalid_id', asset_id=raw_id)
+                continue
+
+            if id_filter is not None and asset_id not in id_filter:
+                continue
+
+            ticker = _clean_str(row.get('ticker'))
+            isin = _clean_str(row.get('isin'))
+
+            if not ticker and not isin:
+                manual_created = _create_manual_placeholder(
+                    asset_id=asset_id,
+                    raw_id=raw_id,
+                    row=row,
+                    reason_code='missing_identifiers',
+                    message='Identificativi mancanti (ticker/ISIN)',
+                )
+                processed_assets += 1
+                if manual_created:
+                    _notify_item('manual_update', asset_id=asset_id, extra={'message': 'missing_identifiers'})
+                else:
+                    summary['errors'].append({'id': asset_id, 'error': 'manual_update_failed_missing_identifiers'})
+                    _notify_item('error', asset_id=asset_id, extra={'message': 'missing_identifiers'})
+                continue
+
+            request_attempted = False
+            try:
+                request_attempted = True
+                quote_data = market_provider.get_latest_price(
+                    ticker=ticker or None,
+                    isin=isin or None,
+                    asset_name=_clean_str(row.get('asset_name')) or None,
+                )
+            except MarketDataError as exc:
+                error_msg = str(exc)
+                lowered_error = error_msg.lower()
+                reason_code = 'issuer_nav_unavailable' if ('nav blackrock' in lowered_error or 'nav emittente' in lowered_error) else 'provider_error'
+                manual_created = _create_manual_placeholder(
+                    asset_id=asset_id,
+                    raw_id=raw_id,
+                    row=row,
+                    reason_code=reason_code,
+                    message=error_msg,
+                )
+                processed_assets += 1
+                if manual_created:
+                    _notify_item('manual_update', asset_id=asset_id, extra={'message': reason_code})
+                else:
+                    if reason_code == 'issuer_nav_unavailable':
+                        summary['alerts'].append({
+                            'id': asset_id,
+                            'type': 'issuer_nav_unavailable',
+                            'symbol': ticker or isin or row.get('asset_name'),
+                            'message': error_msg,
+                        })
+                        summary['skipped'].append({
+                            'id': asset_id,
+                            'reason': 'issuer_nav_unavailable',
+                        })
+                        _notify_item('skipped', asset_id=asset_id, extra={'message': 'issuer_nav_unavailable'})
+                    else:
+                        summary['errors'].append({'id': asset_id, 'error': error_msg})
+                        _notify_item('error', asset_id=asset_id, extra={'message': error_msg})
+                _maybe_pause(request_attempted, row_index)
+                continue
+            except Exception as exc:
+                error_msg = str(exc)
+                self.logger.error(
+                    f"update_market_prices: errore inatteso per ID {asset_id}: {exc}",
+                    exc_info=True,
+                )
+                manual_created = _create_manual_placeholder(
+                    asset_id=asset_id,
+                    raw_id=raw_id,
+                    row=row,
+                    reason_code='unexpected_error',
+                    message=error_msg,
+                )
+                processed_assets += 1
+                if manual_created:
+                    _notify_item('manual_update', asset_id=asset_id, extra={'message': 'unexpected_error'})
+                else:
+                    summary['errors'].append({'id': asset_id, 'error': error_msg})
+                    _notify_item('error', asset_id=asset_id, extra={'message': error_msg})
+                _maybe_pause(request_attempted, row_index)
+                continue
+
+            price = quote_data.get('price')
+            try:
+                price_value = float(price)
+            except (TypeError, ValueError):
+                manual_created = _create_manual_placeholder(
+                    asset_id=asset_id,
+                    raw_id=raw_id,
+                    row=row,
+                    reason_code='price_not_numeric',
+                    message='Prezzo non numerico',
+                )
+                processed_assets += 1
+                if manual_created:
+                    _notify_item('manual_update', asset_id=asset_id, extra={'message': 'price_not_numeric'})
+                else:
+                    summary['errors'].append({'id': asset_id, 'error': 'price_not_numeric'})
+                    _notify_item('error', asset_id=asset_id, extra={'message': 'price_not_numeric'})
+                _maybe_pause(request_attempted, row_index)
+                continue
+
+            if price_value <= 0:
+                manual_created = _create_manual_placeholder(
+                    asset_id=asset_id,
+                    raw_id=raw_id,
+                    row=row,
+                    reason_code='price_not_positive',
+                    message='Prezzo non positivo',
+                )
+                processed_assets += 1
+                if manual_created:
+                    _notify_item('manual_update', asset_id=asset_id, extra={'message': 'price_not_positive'})
+                else:
+                    summary['skipped'].append({'id': asset_id, 'reason': 'price_not_positive'})
+                    _notify_item('skipped', asset_id=asset_id, extra={'message': 'price_not_positive'})
+                _maybe_pause(request_attempted, row_index)
+                continue
+
+            amount = _to_positive_float(row.get('updated_amount'))
+            amount_override = None
+            if amount == 0:
+                fallback_amount = _to_positive_float(row.get('created_amount'))
+                if fallback_amount == 0:
+                    manual_created = _create_manual_placeholder(
+                        asset_id=asset_id,
+                        raw_id=raw_id,
+                        row=row,
+                        reason_code='missing_amount',
+                        message='Quantita mancante',
+                    )
+                    processed_assets += 1
+                    if manual_created:
+                        _notify_item('manual_update', asset_id=asset_id, extra={'message': 'missing_amount'})
+                    else:
+                        summary['skipped'].append({'id': asset_id, 'reason': 'missing_amount'})
+                        _notify_item('skipped', asset_id=asset_id, extra={'message': 'missing_amount'})
+                    _maybe_pause(request_attempted, row_index)
+                    continue
+                amount = fallback_amount
+                amount_override = fallback_amount
+
+            mask = df_all['id'].astype(str) == str(raw_id)
+            if not mask.any():
+                self.logger.warning(
+                    f"update_market_prices: record originale non trovato per ID {asset_id}"
+                )
+                summary['skipped'].append({'id': asset_id, 'reason': 'base_record_missing'})
+                processed_assets += 1
+                _notify_item('skipped', asset_id=asset_id, extra={'message': 'base_record_missing'})
+                _maybe_pause(request_attempted, row_index)
+                continue
+
+            # IMPORTANTE: Usa l'ULTIMO record (iloc[-1]) per avere i dati più recenti
+            # Questo è fondamentale per il confronto del prezzo precedente
+            matching_records = df_all[mask]
+            last_record = matching_records.iloc[-1].copy()
+
+            # Log per debug: mostra quanti record esistono per questo asset
+            num_records = len(matching_records)
+            if num_records > 1:
+                self.logger.debug(f"ID {asset_id}: trovati {num_records} record, usando l'ultimo (ID record: {last_record.get('id')})")
+
+            base_row = last_record.copy()
+            base_row['id'] = next_id
+            base_row['updated_at'] = today
+            base_row['updated_unit_price'] = round(price_value, 6)
+            if amount_override is not None:
+                base_row['updated_amount'] = amount_override
+            total_value = round(amount * price_value, 2)
+            base_row['updated_total_value'] = total_value
+
+            note_tag = 'UPDATED BY AssetMind'
+            alert_tag = 'PRICE ALERT'
+            existing_note = _clean_str(base_row.get('note'))
+            note_parts = [part.strip() for part in existing_note.split('|') if part.strip()] if existing_note else []
+            if note_tag not in note_parts:
+                note_parts.append(note_tag)
+
+            # Confronta con il prezzo dell'ULTIMO record, non del primo
+            price_alert_info: Optional[Dict[str, Any]] = None
+            previous_price = _to_positive_float(last_record.get('updated_unit_price')) or _to_positive_float(last_record.get('created_unit_price'))
+            if previous_price > 0:
+                change_ratio = abs(price_value - previous_price) / previous_price
+                if change_ratio > PRICE_OUTLIER_THRESHOLD:
+                    change_pct = round(change_ratio * 100, 2)
+                    price_alert_info = {
+                        'id': asset_id,
+                        'type': 'price_alert',
+                        'symbol': quote_data.get('symbol'),
+                        'currency': quote_data.get('currency'),
+                        'previous_price': round(previous_price, 6),
+                        'new_price': round(price_value, 6),
+                        'change_ratio': round(change_ratio, 6),
+                        'change_pct': change_pct,
+                    }
+                    summary['alerts'].append(dict(price_alert_info))
+                    if alert_tag not in note_parts:
+                        note_parts.append(alert_tag)
+                    self.logger.warning(
+                        "update_market_prices: variazione prezzo anomala per ID %s (da %s a %s, %s%%)",
+                        asset_id,
+                        previous_price,
+                        price_value,
+                        change_pct,
+                    )
+
+            if note_parts:
+                base_row['note'] = ' | '.join(note_parts)
+
+            if not ticker and quote_data.get('symbol'):
+                base_row['ticker'] = quote_data['symbol']
+
+            new_rows.append(base_row)
+            summary['updated'] += 1
+            detail_entry = {
+                'id': asset_id,
+                'symbol': quote_data.get('symbol'),
+                'price': round(price_value, 6),
+                'currency': quote_data.get('currency'),
+                'new_record_id': next_id,
+            }
+            if price_alert_info:
+                detail_entry['alert'] = True
+                detail_entry['change_pct'] = price_alert_info.get('change_pct')
+            summary['details'].append(detail_entry)
+
+            next_id += 1
+            processed_assets += 1
+            notify_extra = None
+            if price_alert_info:
+                notify_extra = {
+                    'message': 'price_alert',
+                    'change_pct': price_alert_info.get('change_pct'),
+                }
+            _notify_item('updated', asset_id=asset_id, extra=notify_extra)
+            _maybe_pause(request_attempted, row_index)
+
+        if not new_rows:
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        try:
+            df_updated = pd.concat([df_all, pd.DataFrame(new_rows)], ignore_index=True)
+            self.save_data(df_updated)
+        except Exception as exc:
+            self.logger.error(f"update_market_prices: errore salvataggio dati - {exc}")
+            summary['errors'].append({'id': None, 'error': str(exc)})
+            _notify_progress({'stage': 'complete', 'summary': summary})
+            return summary
+
+        _notify_progress({'stage': 'complete', 'summary': summary})
+        return summary
+
     def _clean_date_from_excel(self, date_value):
         """Pulisce le date caricate da Excel usando il sistema centralizzato"""
         try:
@@ -297,14 +782,9 @@ class PortfolioManager:
         """
         df = self.load_data()
         
-        # Assegna ID automatico se non specificato (semplice e robusto)
-        # Usa max(id) + 1 invece di len(df)+1 per evitare collisioni in caso di buchi/eliminazioni
+        # Assegna ID automatico se non specificato
         if asset.id is None:
-            try:
-                next_id = int(df['id'].max()) + 1 if not df.empty else 1
-            except Exception:
-                next_id = (len(df) + 1) if not df.empty else 1
-            asset.id = next_id
+            asset.id = len(df) + 1 if not df.empty else 1
         
         # Assegna data corrente se non specificata usando sistema centralizzato
         if asset.created_at == "":
@@ -402,7 +882,7 @@ class PortfolioManager:
     
     def get_portfolio_summary(self) -> Dict[str, Any]:
         df = self.load_data()
-        
+
         if df.empty:
             return {
                 'total_value': 0,
@@ -411,31 +891,49 @@ class PortfolioManager:
                 'risk_distribution': {},
                 'monthly_accumulation': 0
             }
-        
+
         # NUOVA LOGICA: Considera solo record più recenti per ogni asset unico
         # Asset identificato da: category + asset_name + position + isin
-        
+
+        # IMPORTANTE: Usa stessa normalizzazione di get_current_assets_only() per coerenza
+        def _norm(s):
+            if pd.isna(s):
+                return ''
+            val = str(s).strip()
+            if val.lower() in {'na','n/a','none','null','nan',''}:
+                return ''
+            return val
+
+        # Normalizza campi chiave per deduplica (stessa logica di get_current_assets_only)
+        for key_col in ['category','asset_name','position','isin']:
+            if key_col in df.columns:
+                df[key_col] = df[key_col].apply(_norm)
+            else:
+                df[key_col] = ''
+
         # Crea colonna per identificare univocamente ogni asset
-        df['asset_key'] = (df['category'].fillna('') + '|' + 
-                          df['asset_name'].fillna('') + '|' + 
-                          df['position'].fillna('') + '|' + 
-                          df['isin'].fillna(''))
-        
+        df['asset_key'] = (df['category'] + '|' +
+                          df['asset_name'] + '|' +
+                          df['position'] + '|' +
+                          df['isin'])
+
         # Converte date per ordinamento (usa updated_at se disponibile, altrimenti created_at)
-        df['effective_date'] = pd.to_datetime(df['updated_at'].fillna(df['created_at']), 
-                                            format='%Y-%m-%d', errors='coerce')
-        
+        df['effective_date'] = pd.to_datetime(
+            df['updated_at'].replace(['', 'NA', 'N/A', 'na'], pd.NA).fillna(df['created_at']),
+            format='%Y-%m-%d', errors='coerce'
+        )
+
         # Per ogni asset unico, prende solo il record con data più recente
         latest_records = df.sort_values('effective_date', ascending=False).groupby('asset_key').first().reset_index()
-        
+
         # Calcola i totali sui record più recenti
         total_value = latest_records['updated_total_value'].fillna(latest_records['created_total_value']).sum()
-        total_income = (latest_records['income_per_year'].fillna(0).sum() + 
+        total_income = (latest_records['income_per_year'].fillna(0).sum() +
                        latest_records['rental_income'].fillna(0).sum())
         categories_count = latest_records['category'].value_counts().to_dict()
         risk_distribution = latest_records['risk_level'].value_counts().to_dict()
         monthly_accumulation = latest_records['accumulation_amount'].fillna(0).sum()
-        
+
         return {
             'total_value': total_value,
             'total_income': total_income,
@@ -599,3 +1097,5 @@ class PortfolioManager:
             self.logger.error(f"Errore nella colorazione dei record storici: {e}")
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
+
+

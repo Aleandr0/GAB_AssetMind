@@ -46,21 +46,39 @@ class ExportUI(BaseUIComponent):
     
     def _create_header(self):
         """Crea l'header della pagina export"""
-        header_frame = ctk.CTkFrame(self.export_frame, height=80)
-        header_frame.pack(fill="x", padx=10, pady=10)
-        header_frame.pack_propagate(False)
-        
-        # Titolo
+        self.header_frame = ctk.CTkFrame(self.export_frame, height=80)
+        self.header_frame.pack(fill="x", padx=10, pady=10)
+        self.header_frame.pack_propagate(False)
+
+        # Container per titolo e filtri (layout orizzontale)
+        title_container = ctk.CTkFrame(self.header_frame)
+        title_container.pack(fill="both", expand=True)
+
+        # Titolo a sinistra
         title_label = ctk.CTkLabel(
-            header_frame,
+            title_container,
             text="📄 Esportazione Dati",
             font=ctk.CTkFont(**UIConfig.FONTS['title'])
         )
-        title_label.pack(expand=True)
-        
-        # Sottotitolo
+        title_label.pack(side="left", padx=20, pady=10)
+
+        # Label filtri attivi a destra (multilinea con wrapping)
+        base_size = UIConfig.FONTS['text'].get('size', 12)
+        reduced_size = int(base_size * 0.7)
+
+        self.filter_label = ctk.CTkLabel(
+            title_container,
+            text="",
+            font=ctk.CTkFont(family=UIConfig.FONTS['text'].get('family', 'Arial'), size=reduced_size),
+            text_color=UIConfig.COLORS['secondary'],
+            justify="left",
+            wraplength=600
+        )
+        self.filter_label.pack(side="left", padx=20, pady=10, fill="x", expand=True)
+
+        # Sottotitolo sotto
         subtitle_label = ctk.CTkLabel(
-            header_frame,
+            self.header_frame,
             text="Esporta i dati del portfolio in diversi formati",
             font=ctk.CTkFont(**UIConfig.FONTS['text']),
             text_color=UIConfig.COLORS['secondary']
@@ -229,26 +247,27 @@ class ExportUI(BaseUIComponent):
             print(f"Errore aggiornamento statistiche: {e}")
 
     def _format_filter_summary(self) -> str:
-        """Ritorna una riga riassuntiva dei filtri attivi."""
+        """Ritorna una stringa riassuntiva dei filtri attivi.
+        Formato: Campo: valore1, valore2, valore3
+        Ogni filtro su una riga separata."""
         try:
             info = self._filter_info or {}
             col_filters = info.get('column_filters') or {}
-            show_all = bool(info.get('show_all_records'))
+
+            # Nessun filtro attivo - non mostrare nulla
+            if not col_filters:
+                return ''
+
             from config import FieldMapping
-            parts = []
-            parts.append('Base: Tutti i record' if show_all else 'Base: Asset correnti')
-            if col_filters:
-                filt_parts = []
-                for col, values in col_filters.items():
-                    disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
-                    vals = list(sorted({str(v) for v in values}))
-                    if len(vals) > 5:
-                        shown = ', '.join(vals[:5]) + f" +{len(vals)-5}"
-                    else:
-                        shown = ', '.join(vals)
-                    filt_parts.append(f"{disp} = {shown}")
-                parts.append('Filtri: ' + '; '.join(filt_parts))
-            return ' | '.join(parts)
+            lines = []
+
+            for col, values in col_filters.items():
+                disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
+                vals = list(sorted({str(v) for v in values}))
+                shown = ', '.join(vals)
+                lines.append(f"{disp}: {shown}")
+
+            return '\n'.join(lines)
         except Exception:
             return ''
 
@@ -451,10 +470,9 @@ class ExportUI(BaseUIComponent):
                     validated_path = self.path_validator.validate_export_path(filename)
                     self.logger.info(f"Path backup validato: {validated_path}")
 
-                    if isinstance(self._external_filtered_df, pd.DataFrame) and not self._external_filtered_df.empty:
-                        df = self._external_filtered_df.copy()
-                    else:
-                        df = self.portfolio_manager.load_data()
+                    # IMPORTANTE: Il backup deve SEMPRE includere TUTTI i record (asset correnti + storici)
+                    # Non usare _external_filtered_df che contiene solo gli asset filtrati
+                    df = self.portfolio_manager.load_data()
                     if df.empty:
                         messagebox.showwarning("Avviso", "Nessun dato da fare backup")
                         return
@@ -462,6 +480,10 @@ class ExportUI(BaseUIComponent):
                     # Salva usando il metodo del PortfolioManager per mantenere le formule
                     backup_manager = PortfolioManager(str(validated_path))
                     backup_manager.save_data(df)
+
+                    # Applica la colorazione azzurra ai record storici nel backup
+                    backup_manager.color_historical_records()
+
                     filename = str(validated_path)  # Usa path validato
 
                     # Aggiungi foglio 'Export_Info' con metadati
@@ -528,16 +550,26 @@ class ExportUI(BaseUIComponent):
             validated_path = self.path_validator.validate_export_path(filename)
 
             # Determina il DataFrame filtrato corrente
+            filter_info = self._filter_info if isinstance(self._filter_info, dict) else {}
+            col_filters = filter_info.get('column_filters') if filter_info else None
+            show_all = bool(filter_info.get('show_all_records')) if filter_info else False
+            has_column_filters = False
+            if isinstance(col_filters, dict):
+                has_column_filters = any(bool(values) for values in col_filters.values())
+            elif col_filters:
+                has_column_filters = True
+
             if isinstance(self._external_filtered_df, pd.DataFrame) and not self._external_filtered_df.empty:
                 df = self._external_filtered_df.copy()
             else:
                 try:
-                    show_all = bool(self._filter_info.get('show_all_records')) if isinstance(self._filter_info, dict) else False
                     base_df = self.portfolio_manager.load_data() if show_all else self.portfolio_manager.get_current_assets_only()
-                    col_filters = self._filter_info.get('column_filters') if isinstance(self._filter_info, dict) else None
                     df = apply_global_filters(base_df, col_filters)
                 except Exception:
                     df = self.portfolio_manager.get_current_assets_only()
+
+            if show_all and not has_column_filters:
+                df = self.portfolio_manager.get_current_assets_only()
 
             if df.empty:
                 messagebox.showwarning("Avviso", "Nessun dato da includere nel PDF")
@@ -910,12 +942,24 @@ class ExportUI(BaseUIComponent):
                     self._create_info_section()
                     break
 
+    def _update_filter_label(self):
+        """Aggiorna la label dei filtri nell'header."""
+        if not hasattr(self, 'filter_label') or not self.filter_label:
+            return
+
+        summary = self._format_filter_summary()
+        if summary:
+            self.filter_label.configure(text=summary)
+        else:
+            self.filter_label.configure(text="")
+
     def refresh_with_filtered_data(self, df: pd.DataFrame, filter_info: Optional[dict] = None):
         """Imposta DF filtrato e info filtri correnti, poi aggiorna stats."""
         try:
             self._external_filtered_df = df.copy() if isinstance(df, pd.DataFrame) else None
             if isinstance(filter_info, dict):
                 self._filter_info = filter_info
+            self._update_filter_label()
         except Exception:
             self._external_filtered_df = None
         finally:

@@ -67,6 +67,10 @@ class AssetForm(BaseUIComponent):
         self.state = FormState()
         self.logger = get_logger('AssetForm')
         
+        # Avvisi identificativi mercato
+        self.identifiers_notice_label = None
+        self.identifiers_notice_var: Optional[tk.StringVar] = None
+        
         # Riferimenti UI
         self.title_label = None
         self.clear_btn = None
@@ -81,8 +85,10 @@ class AssetForm(BaseUIComponent):
         self.form_frame.pack(fill="both", expand=True, padx=10, pady=5)
         
         self._create_header()
+        self._create_identifiers_notice_area()
         self._create_form_fields()
         self._initialize_form()
+        self._update_identifiers_notice()
         
         return self.form_frame
     
@@ -167,6 +173,72 @@ class AssetForm(BaseUIComponent):
         )
         self.save_btn.pack(side="left", padx=4)
     
+    def _create_identifiers_notice_area(self):
+        """Crea il banner informativo per gli identificativi di mercato."""
+        self.identifiers_notice_var = tk.StringVar(value="")
+        self.identifiers_notice_label = ctk.CTkLabel(
+            self.form_frame,
+            textvariable=self.identifiers_notice_var,
+            font=ctk.CTkFont(**UIConfig.FONTS['small']),
+            text_color=UIConfig.COLORS['warning'],
+            justify="left",
+            wraplength=780
+        )
+
+    def _show_identifiers_notice(self, message: str) -> None:
+        """Visualizza l'avviso relativo agli identificativi di mercato."""
+        if not self.identifiers_notice_label or not self.identifiers_notice_var:
+            return
+        self.identifiers_notice_var.set(message)
+        if not self.identifiers_notice_label.winfo_ismapped():
+            self.identifiers_notice_label.pack(fill="x", padx=20, pady=(0, 6))
+
+    def _hide_identifiers_notice(self) -> None:
+        """Nasconde l'avviso relativo agli identificativi di mercato."""
+        if self.identifiers_notice_var:
+            self.identifiers_notice_var.set("")
+        if self.identifiers_notice_label and self.identifiers_notice_label.winfo_ismapped():
+            self.identifiers_notice_label.pack_forget()
+
+    def _update_identifiers_notice(self, *_):
+        """Aggiorna l'avviso richiesto per gli identificativi di mercato."""
+        if not self.form_vars:
+            return
+
+        category_var = self.form_vars.get('category')
+        if not category_var:
+            self._hide_identifiers_notice()
+            return
+
+        selected_category = category_var.get().strip()
+        if selected_category not in AssetConfig.MARKET_IDENTIFIER_CATEGORIES:
+            self._hide_identifiers_notice()
+            return
+
+        required_fields = [
+            ('asset_name', 'Nome asset'),
+            ('ticker', 'Ticker'),
+            ('isin', 'ISIN'),
+        ]
+
+        missing_labels = []
+        for field_key, label in required_fields:
+            field_var = self.form_vars.get(field_key)
+            if not field_var or not field_var.get().strip():
+                missing_labels.append(label)
+
+        if not missing_labels:
+            self._hide_identifiers_notice()
+            return
+
+        missing_text = ", ".join(missing_labels)
+        message = (
+            f"Per la categoria {selected_category} e' consigliato indicare "
+            "Ticker, ISIN e Nome asset per garantire l'identificazione corretta "
+            f"nei dati di mercato. Campi mancanti: {missing_text}."
+        )
+        self._show_identifiers_notice(message)
+
     def _create_form_fields(self):
         """Crea i campi del form"""
         # Scrollable frame per il form
@@ -251,6 +323,9 @@ class AssetForm(BaseUIComponent):
         # Salva riferimenti
         self.form_vars[key] = var
         self.form_widgets[key] = widget
+
+        if key in {'asset_name', 'ticker', 'isin'}:
+            var.trace_add('write', lambda *args: self._update_identifiers_notice())
     
     def _initialize_form(self):
         """Inizializza il form con tutti i campi abilitati"""
@@ -285,7 +360,8 @@ class AssetForm(BaseUIComponent):
                     safe_execute(lambda: self.form_vars[field_key].set("0"))
                 else:
                     safe_execute(lambda: self.form_vars[field_key].set("NA"))
-    
+        self._update_identifiers_notice()
+
     def _clear_form(self):
         """Pulisce tutti i campi del form"""
         for var in self.form_vars.values():
@@ -296,6 +372,7 @@ class AssetForm(BaseUIComponent):
         self._update_title()
         self._initialize_form()
         self._update_button_states()
+        self._update_identifiers_notice()
         
         self.trigger_callback('form_cleared')
     
@@ -389,9 +466,17 @@ class AssetForm(BaseUIComponent):
         self._update_button_states()
     
     def _enable_historical_mode(self):
-        """Abilita la modalità storica (solo campi Updated Amount e Updated Unit Price)"""
-        editable_fields = ['updated_amount', 'updated_unit_price']
-        
+        """Abilita la modalità storica (solo campo Updated Unit Price modificabile)"""
+        editable_fields = ['updated_unit_price']
+
+        # Aggiorna subito la data di aggiornamento con la data odierna
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            if 'updated_at' in self.form_vars:
+                safe_execute(lambda: self.form_vars['updated_at'].set(today))
+        except Exception as exc:
+            self.logger.debug(f"Impossibile impostare data odierna in modalità storica: {exc}")
+
         for key, widget in self.form_widgets.items():
             if key in editable_fields:
                 # Campi editabili
@@ -424,6 +509,8 @@ class AssetForm(BaseUIComponent):
             
             # Salvataggio in base alla modalità
             success = False
+            mode_before_save = self.state.mode
+            new_historical_asset: Optional[Asset] = None
             
             if self.state.mode == 'create':
                 # Nuovo asset
@@ -442,20 +529,40 @@ class AssetForm(BaseUIComponent):
                 action = "aggiornato"
             
             elif self.state.mode == 'historical':
-                # Aggiornamento semplice sullo stesso ID (no inserto duplicato)
-                self.logger.debug("Aggiornamento in modalità storico (riscrive stesso ID)")
+                # Duplica il record corrente creando uno storico con il nuovo valore
+                self.logger.debug("Creazione di un nuovo record storico per l'asset selezionato")
                 asset_data['updated_at'] = datetime.now().strftime("%Y-%m-%d")
-                success = self.portfolio_manager.update_asset(
+
+                updated_amount = asset_data.get('updated_amount', 0.0) or 0.0
+                updated_unit_price = asset_data.get('updated_unit_price', 0.0) or 0.0
+                try:
+                    updated_total_value = float(updated_amount) * float(updated_unit_price)
+                except (TypeError, ValueError):
+                    updated_total_value = 0.0
+                asset_data['updated_total_value'] = round(updated_total_value, 2)
+
+                new_historical_asset = self.portfolio_manager.create_historical_record(
                     self.state.editing_asset_id,
                     asset_data
                 )
-                action = "aggiornato"
+                success = new_historical_asset is not None
+                action = "storico creato"
             
             # Gestione risultato
             if success:
                 self.logger.info(f"Salvataggio completato con successo - {action}")
-                messagebox.showinfo("Successo", f"Asset {action} con successo!")
-                self._clear_form()
+
+                if mode_before_save == 'historical' and new_historical_asset:
+                    asset_data['id'] = new_historical_asset.id
+                    self.state.set_edit_mode(new_historical_asset.id)
+                    self.populate_form(new_historical_asset)
+                    messagebox.showinfo("Successo", "Nuovo record storico creato con successo!")
+                    self._update_title()
+                    self._update_button_states()
+                else:
+                    messagebox.showinfo("Successo", f"Asset {action} con successo!")
+                    self._clear_form()
+
                 self.trigger_callback('asset_saved', asset_data)
             else:
                 self.logger.error("Salvataggio fallito")
@@ -601,6 +708,7 @@ class AssetForm(BaseUIComponent):
         
         # Abilita tutti i campi per visualizzazione completa
         self._initialize_form()
+        self._update_identifiers_notice()
     
     def edit_asset(self, asset_id: int):
         """Imposta il form in modalità modifica per un asset specifico"""

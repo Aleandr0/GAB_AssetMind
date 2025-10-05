@@ -36,7 +36,7 @@ class ChartsUI(BaseUIComponent):
         self.end_year = None
         self.available_years = []
         self.logger = get_logger('ChartsUI')
-        
+
         # Configurazione matplotlib per CustomTkinter
         plt.style.use('default')
         plt.rcParams.update({
@@ -60,34 +60,34 @@ class ChartsUI(BaseUIComponent):
         # Carica il grafico di default
         self.chart_type.set("Distribuzione Valore per Categoria")
         self._update_chart()
-        
+
         return self.charts_frame
     
     def _create_controls(self):
         """Crea i controlli per la selezione del tipo di grafico"""
-        controls_frame = ctk.CTkFrame(self.charts_frame, height=60)
-        controls_frame.pack(fill="x", padx=10, pady=5)
-        controls_frame.pack_propagate(False)
+        self.controls_frame = ctk.CTkFrame(self.charts_frame, height=60)
+        self.controls_frame.pack(fill="x", padx=10, pady=5)
+        self.controls_frame.pack_propagate(False)
         
         # Label
         ctk.CTkLabel(
-            controls_frame,
+            self.controls_frame,
             text="Tipo Grafico:",
             font=ctk.CTkFont(**UIConfig.FONTS['subheader'])
         ).pack(side="left", padx=20, pady=15)
-        
+
         # Dropdown selezione grafico
         chart_types = [
             "Distribuzione Valore per Categoria",
-            "Distribuzione Rischio", 
+            "Distribuzione Rischio",
             "Performance per Categoria",
             "Evoluzione Temporale"
         ]
-        
+
         self.chart_type = ctk.StringVar(value=chart_types[0])
-        
+
         chart_selector = ctk.CTkComboBox(
-            controls_frame,
+            self.controls_frame,
             values=chart_types,
             variable=self.chart_type,
             command=self._on_chart_type_changed,
@@ -95,31 +95,34 @@ class ChartsUI(BaseUIComponent):
             font=ctk.CTkFont(**UIConfig.FONTS['text'])
         )
         chart_selector.pack(side="left", padx=20, pady=15)
-        
-        # Pulsante refresh
-        refresh_btn = ctk.CTkButton(
-            controls_frame,
-            text="🔄 Aggiorna",
-            command=self._update_chart,
-            **UIConfig.BUTTON_SIZES['medium'],
-            font=ctk.CTkFont(**UIConfig.FONTS['button']),
-            fg_color=UIConfig.COLORS['primary'],
-            hover_color=UIConfig.COLORS['primary_hover']
+
+        # Label filtri attivi (multilinea con wrapping)
+        # Riduce font del 30%: se font base è 12, diventa 8.4 ≈ 8
+        base_size = UIConfig.FONTS['text'].get('size', 12)
+        reduced_size = int(base_size * 0.7)
+
+        self.filter_label = ctk.CTkLabel(
+            self.controls_frame,
+            text="",
+            font=ctk.CTkFont(family=UIConfig.FONTS['text'].get('family', 'Arial'), size=reduced_size),
+            text_color=UIConfig.COLORS['secondary'],
+            justify="left",
+            wraplength=600  # Larghezza massima prima di andare a capo
         )
-        refresh_btn.pack(side="left", padx=10, pady=15)
-        
+        self.filter_label.pack(side="left", padx=20, pady=15, fill="x", expand=True)
+
         # Controlli temporali (inizialmente nascosti)
         # Label Anno Iniziale
         self.start_year_label = ctk.CTkLabel(
-            controls_frame,
+            self.controls_frame,
             text="Dal:",
             font=ctk.CTkFont(**UIConfig.FONTS['text'])
         )
-        
+
         # Dropdown anno iniziale
         self.start_year = ctk.StringVar()
         self.start_year_selector = ctk.CTkComboBox(
-            controls_frame,
+            self.controls_frame,
             variable=self.start_year,
             command=self._on_temporal_range_changed,
             width=80,
@@ -128,15 +131,15 @@ class ChartsUI(BaseUIComponent):
         
         # Label Anno Finale
         self.end_year_label = ctk.CTkLabel(
-            controls_frame,
+            self.controls_frame,
             text="Al:",
             font=ctk.CTkFont(**UIConfig.FONTS['text'])
         )
-        
+
         # Dropdown anno finale
         self.end_year = ctk.StringVar()
         self.end_year_selector = ctk.CTkComboBox(
-            controls_frame,
+            self.controls_frame,
             variable=self.end_year,
             command=self._on_temporal_range_changed,
             width=80,
@@ -232,8 +235,8 @@ class ChartsUI(BaseUIComponent):
             safe_execute(lambda: widget.destroy())
         
         try:
-            # Mostra banner filtri se presenti
-            self._render_filter_banner()
+            # Aggiorna label filtri nei controlli
+            self._update_filter_label()
             # Carica i dati (solo asset più recenti per coerenza)
             if isinstance(self._external_filtered_df, pd.DataFrame) and not self._external_filtered_df.empty:
                 df = self._external_filtered_df.copy()
@@ -961,51 +964,40 @@ class ChartsUI(BaseUIComponent):
         plt.close('all')
 
     def _format_filter_summary(self) -> Optional[str]:
-        """Crea una stringa leggibile con i filtri attivi."""
+        """Crea una stringa leggibile con i filtri attivi.
+        Formato: Campo: valore1, valore2, valore3
+        Ogni filtro su una riga separata."""
         try:
             info = self._filter_info or {}
             col_filters = info.get('column_filters') or {}
-            show_all = bool(info.get('show_all_records'))
 
-            if not col_filters and not show_all:
+            # Nessun filtro attivo - non mostrare nulla
+            if not col_filters:
                 return None
 
             from config import FieldMapping
-            parts = []
-            base_txt = 'Base: Tutti i record' if show_all else 'Base: Asset correnti'
-            parts.append(base_txt)
+            lines = []
 
-            if col_filters:
-                filt_parts = []
-                for col, values in col_filters.items():
-                    disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
-                    vals = list(sorted({str(v) for v in values}))
-                    if len(vals) > 5:
-                        shown = ', '.join(vals[:5]) + f" +{len(vals)-5}"
-                    else:
-                        shown = ', '.join(vals)
-                    filt_parts.append(f"{disp} = {shown}")
-                parts.append('Filtri: ' + '; '.join(filt_parts))
+            for col, values in col_filters.items():
+                disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
+                vals = list(sorted({str(v) for v in values}))
+                shown = ', '.join(vals)
+                lines.append(f"{disp}: {shown}")
 
-            return ' | '.join(parts)
+            return '\n'.join(lines)
         except Exception:
             return None
 
-    def _render_filter_banner(self):
-        """Mostra una label in alto con i filtri attivi, se presenti."""
-        summary = self._format_filter_summary()
-        if not summary:
+    def _update_filter_label(self):
+        """Aggiorna la label dei filtri nei controlli."""
+        if not hasattr(self, 'filter_label') or not self.filter_label:
             return
-        try:
-            label = ctk.CTkLabel(
-                self.chart_frame,
-                text=f"🔍 {summary}",
-                font=ctk.CTkFont(**UIConfig.FONTS['text']),
-                text_color=UIConfig.COLORS['secondary']
-            )
-            label.pack(fill="x", padx=10, pady=(6, 0))
-        except Exception:
-            pass
+
+        summary = self._format_filter_summary()
+        if summary:
+            self.filter_label.configure(text=summary)
+        else:
+            self.filter_label.configure(text="")
 
 
 

@@ -19,13 +19,16 @@ from tkinter import messagebox, filedialog
 import sys
 import os
 import glob
-from typing import Optional, Dict, Any
+import threading
+from typing import Optional, Dict, Any, List
+import time
 import pandas as pd
 
 # Import dei moduli refactored
 from config import UIConfig, DatabaseConfig, Messages, get_application_directory
 from utils import ErrorHandler, DataCache, safe_execute
 from models import PortfolioManager, apply_global_filters
+from market_data import MarketDataService, MarketDataError
 from ui_components import NavigationBar, PortfolioTable
 from asset_form import AssetForm
 from charts_ui import ChartsUI
@@ -161,6 +164,7 @@ class GABAssetMind:
         self.navbar.register_callback('page_changed', self.show_page)
         self.navbar.register_callback('portfolio_changed', self._switch_portfolio)
         self.navbar.register_callback('new_portfolio_requested', self._create_new_portfolio)
+        self.navbar.register_callback('market_update_requested', self._on_market_update_requested)
         
         # Portfolio Table callbacks
         self.portfolio_table.register_callback('view_changed', self._on_view_changed)
@@ -168,6 +172,7 @@ class GABAssetMind:
         self.portfolio_table.register_callback('filter_requested', self._show_column_filter)
         self.portfolio_table.register_callback('data_filtered', self._on_data_filtered)
         self.portfolio_table.register_callback('data_changed', self._on_data_changed)
+        self.portfolio_table.register_callback('market_update_requested', self._on_market_update_requested)
         # Filtri globali
         self.portfolio_table.register_callback('filters_changed', self._on_filters_changed)
         
@@ -224,7 +229,6 @@ class GABAssetMind:
         try:
             self.logger.debug(f"Inizio caricamento dati portfolio")
             self.logger.debug(f"Portfolio table exists: {self.portfolio_table is not None}")
-
             # Carica base DF secondo stato globale e applica filtri globali
             base_show_all = bool(self.filter_state.get('show_all_records'))
             if base_show_all:
@@ -233,10 +237,8 @@ class GABAssetMind:
             else:
                 self.logger.debug("Base: asset correnti")
                 df_base = self.portfolio_manager.get_current_assets_only()
-
             df = apply_global_filters(df_base, self.filter_state.get('column_filters'))
             self._last_filtered_df = df.copy() if isinstance(df, pd.DataFrame) else None
-
             # Log semplice sui dati caricati
             self.logger.debug(f"Dati caricati: {len(df)} righe")
             if isinstance(df, pd.DataFrame) and not df.empty:
@@ -247,7 +249,6 @@ class GABAssetMind:
                 self.logger.debug(f"Aggiornando portfolio_table con {len(df)} righe")
                 self.portfolio_table.update_data(df)
                 self.logger.debug("update_data() completato")
-
                 # Refresh UI ottimizzato - solo update_idletasks
                 try:
                     if hasattr(self, 'after'):  # Solo se la finestra è inizializzata
@@ -267,7 +268,6 @@ class GABAssetMind:
                 self.charts_ui.refresh_with_filtered_data(df, self.filter_state)
             if self.export_ui and hasattr(self.export_ui, 'refresh_with_filtered_data'):
                 self.export_ui.refresh_with_filtered_data(df, self.filter_state)
-
             self._update_navbar_values()
             
         except Exception as e:
@@ -286,7 +286,6 @@ class GABAssetMind:
                 self.filter_state['column_filters'] = payload['column_filters']
             if 'show_all_records' in payload:
                 self.filter_state['show_all_records'] = bool(payload['show_all_records'])
-
             # Ricarica i dati filtrati e aggiorna UI (nav, table, charts, export)
             self._load_portfolio_data()
         except Exception as e:
@@ -354,13 +353,10 @@ class GABAssetMind:
                     app_dir = get_application_directory()
                     full_path = os.path.join(app_dir, selected_file)
                     validated_path = self.path_validator.validate_portfolio_path(full_path)
-
                     self.current_portfolio_file = selected_file
                     self.logger.info(f"Cambio portfolio validato: {validated_path}")
-
                     # Aggiorna il PortfolioManager con path sicuro
                     self.portfolio_manager = PortfolioManager(str(validated_path))
-
                 except SecurityError as e:
                     self.logger.error(f"Portfolio non sicuro: {e}")
                     messagebox.showerror("Errore Sicurezza", f"Portfolio non sicuro: {e}")
@@ -400,23 +396,18 @@ class GABAssetMind:
         try:
             dialog = ctk.CTkInputDialog(text="Nome del nuovo portfolio:", title="Nuovo Portfolio")
             portfolio_name = dialog.get_input()
-
             if portfolio_name:
                 try:
                     # Crea path sicuro per il nuovo portfolio
                     safe_path = self.path_validator.create_safe_portfolio_path(portfolio_name)
-
                     if safe_path.exists():
                         messagebox.showerror("Errore", f"Il portfolio '{safe_path.name}' esiste già!")
                         return
-
                     self.logger.info(f"Creando nuovo portfolio sicuro: {safe_path}")
-
                     # Crea nuovo portfolio con path validato
                     new_portfolio_manager = PortfolioManager(str(safe_path))
                     self.current_portfolio_file = safe_path.name
                     self.portfolio_manager = new_portfolio_manager
-
                 except SecurityError as e:
                     self.logger.error(f"Nome portfolio non sicuro: {e}")
                     messagebox.showerror("Errore Sicurezza", f"Nome portfolio non sicuro: {e}")
@@ -482,7 +473,326 @@ class GABAssetMind:
         """Gestisce il completamento di un export"""
         print(f"Export {export_type} completato: {filename}")
         # Potrebbe aggiornare statistiche o log di export in futuro
+
+    def _on_market_update_requested(self):
+        """Avvia il flusso di aggiornamento prezzi dal pulsante Portfolio."""
+        if not self.portfolio_manager:
+            return
+
+        if self.portfolio_table and hasattr(self.portfolio_table, 'set_market_update_state'):
+            self.portfolio_table.set_market_update_state(True)
+        self._perform_market_update()
+
+    def _get_active_selection_ids(self) -> Optional[List[int]]:
+        """Determina gli ID degli asset corrispondenti alla selezione corrente."""
+        selection_ids: List[int] = []
+
+        if self.portfolio_table:
+            try:
+                selection_ids.extend(self.portfolio_table.get_selected_asset_ids())
+            except Exception as exc:
+                self.logger.debug(f"Impossibile recuperare selezione tabella: {exc}")
+
+        if selection_ids:
+            return sorted(set(selection_ids))
+
+        if isinstance(self._last_filtered_df, pd.DataFrame) and not self._last_filtered_df.empty:
+            if 'id' in self._last_filtered_df.columns:
+                collected: List[int] = []
+                for raw_id in self._last_filtered_df['id'].dropna().unique():
+                    try:
+                        collected.append(int(float(raw_id)))
+                    except (TypeError, ValueError):
+                        continue
+                if collected:
+                    return sorted(set(collected))
+
+        return None
+
+    def _estimate_update_target_count(self, selection_ids: Optional[List[int]]) -> int:
+        """Stima il numero di asset coinvolti nell'aggiornamento prezzi."""
+        if selection_ids:
+            return len(selection_ids)
+
+        try:
+            current_assets = self.portfolio_manager.get_current_assets_only()
+            return len(current_assets)
+        except Exception as exc:
+            self.logger.debug(f"Impossibile stimare il numero di asset per l'aggiornamento: {exc}")
+            return 0
+
+
+
+    def _perform_market_update(self):
+        """Esegue l'aggiornamento prezzi tramite Twelve Data in modo asincrono."""
+        try:
+            market_service = MarketDataService()
+        except MarketDataError as exc:
+            messagebox.showwarning("Aggiornamento prezzi", str(exc))
+            if self.portfolio_table and hasattr(self.portfolio_table, 'set_market_update_state'):
+                self.portfolio_table.set_market_update_state(False)
+            return
+
+        selection_ids = self._get_active_selection_ids()
+        if selection_ids:
+            self.logger.debug(
+                "Aggiornamento prezzi limitato a %d asset dalla selezione corrente",
+                len(selection_ids),
+            )
+
+        total_targets = self._estimate_update_target_count(selection_ids)
+        if total_targets <= 0:
+            if self.portfolio_table and hasattr(self.portfolio_table, 'set_market_update_state'):
+                self.portfolio_table.set_market_update_state(False)
+            messagebox.showinfo(
+                "Aggiornamento prezzi",
+                "Nessun asset disponibile per l'aggiornamento prezzi.",
+            )
+            return
+
+        progress_dialog = MarketUpdateProgressDialog(self.root, total_targets)
+        progress_dialog.handle_event({'stage': 'start', 'total': total_targets})
+
+        def dispatch_progress(event: Dict[str, Any]) -> None:
+            self.root.after(0, lambda e=event: progress_dialog.handle_event(e))
+
+
+
+        def finalize(result: Optional[Dict[str, Any]], error: Optional[Exception]) -> None:
+            progress_dialog.handle_event({'stage': 'done'})
+            progress_dialog.close()
+            if self.portfolio_table and hasattr(self.portfolio_table, 'set_market_update_state'):
+                self.portfolio_table.set_market_update_state(False)
+            if error:
+                if isinstance(error, MarketDataError):
+                    self.logger.error(f"Errore Twelve Data: {error}")
+                    messagebox.showerror("Aggiornamento prezzi", str(error))
+                else:
+                    self.logger.exception("Aggiornamento prezzi: errore inatteso")
+                    messagebox.showerror(
+                        "Aggiornamento prezzi",
+                        f"Errore inatteso: {error}",
+                    )
+                return
+            safe_execute(self._load_portfolio_data)
+            safe_execute(self._update_navbar_values)
+            if self.charts_ui:
+                safe_execute(self.charts_ui.refresh_charts)
+            if self.export_ui:
+                safe_execute(self.export_ui.refresh_stats)
+            result = result or {}
+            updated = result.get('updated', 0)
+            errors = result.get('errors', [])
+            skipped = result.get('skipped', [])
+            alerts = result.get('alerts', [])
+            nav_issue_ids: List[int] = []
+            manual_issue_ids: List[int] = []
+            price_alert_ids: List[int] = []
+            if alerts:
+                for alert in alerts:
+                    alert_type = (alert.get('type') or '').lower()
+                    raw_id = alert.get('id')
+                    try:
+                        parsed_id = int(raw_id)
+                    except (TypeError, ValueError):
+                        parsed_id = None
+                        if raw_id is not None:
+                            self.logger.debug("ID alert non numerico (%s): %s", alert_type, raw_id)
+                    if parsed_id is None:
+                        continue
+                    if alert_type == 'issuer_nav_unavailable':
+                        nav_issue_ids.append(parsed_id)
+                    elif alert_type == 'manual_update_required':
+                        manual_issue_ids.append(parsed_id)
+                    elif alert_type == 'price_alert':
+                        price_alert_ids.append(parsed_id)
+            if self.portfolio_table and hasattr(self.portfolio_table, 'mark_alert_rows'):
+                try:
+                    self.portfolio_table.mark_alert_rows(
+                        nav_issue_ids=nav_issue_ids,
+                        manual_issue_ids=manual_issue_ids,
+                        price_alert_ids=price_alert_ids,
+                    )
+                except Exception as exc:
+                    self.logger.warning("Impossibile applicare l'evidenziazione degli alert: %s", exc)
+
+            message_lines = [f"Asset aggiornati: {updated}"]
+            if skipped:
+                message_lines.append(f"Saltati: {len(skipped)}")
+            if alerts:
+                message_lines.append(f"Alert anomalie: {len(alerts)}")
+            if errors:
+                message_lines.append(f"Errori: {len(errors)}")
+            summary_message = "\n".join(message_lines)
+            if errors:
+                messagebox.showerror("Aggiornamento prezzi", summary_message)
+            elif alerts:
+                messagebox.showwarning("Aggiornamento prezzi", summary_message)
+            elif updated == 0:
+                messagebox.showinfo("Aggiornamento prezzi", summary_message)
+            else:
+                messagebox.showinfo("Aggiornamento prezzi", summary_message)
+            self.logger.info(
+                "Aggiornamento prezzi completato: %s",
+                summary_message.replace("\n", " | "),
+            )
+            self.logger.debug("Aggiornamento prezzi - dettagli: %s", result)
+            self._show_market_update_report(result)
+
+        def run_update() -> None:
+                result: Optional[Dict[str, Any]] = None
+                error: Optional[Exception] = None
+                try:
+                    result = self.portfolio_manager.update_market_prices(
+                        market_service,
+                        asset_ids=selection_ids,
+                        progress_callback=dispatch_progress,
+                    )
+                except Exception as exc:
+                    error = exc
+                finally:
+                    self.root.after(0, lambda: finalize(result, error))
     
+        threading.Thread(target=run_update, daemon=True).start()
+
+    def _show_market_update_report(self, result: Dict[str, Any]):
+        """Mostra un report dettagliato dell'aggiornamento prezzi."""
+        if not result:
+            return
+
+        try:
+            details = result.get('details', [])
+            skipped = result.get('skipped', [])
+            errors = result.get('errors', [])
+            alerts = result.get('alerts', [])
+        except AttributeError:
+            self.logger.warning("Report aggiornamento prezzi non generato: risultato non valido")
+            return
+
+        window = ctk.CTkToplevel(self.root)
+        window.title("Report aggiornamento prezzi")
+        window.geometry("780x520")
+        window.transient(self.root)
+        window.grab_set()
+
+        reason_map = {
+            'missing_identifiers': 'Identificativi mancanti (ticker/ISIN)',
+            'invalid_id': 'ID non valido',
+            'missing_amount': 'Quantita assente',
+            'price_not_positive': 'Prezzo non positivo',
+            'base_record_missing': 'Record originale non trovato',
+            'price_outlier': 'Variazione prezzo oltre soglia',
+            'issuer_nav_unavailable': 'NAV emittente non disponibile (aggiornare manualmente)',
+        }
+
+        report_lines = []
+        report_lines.append("Aggiornamento prezzi - report dettagliato")
+        report_lines.append("")
+        report_lines.append(f"Totale aggiornati: {result.get('updated', 0)}")
+        report_lines.append(f"Totale saltati: {len(skipped)}")
+        report_lines.append(f"Totale alert: {len(alerts)}")
+        report_lines.append(f"Totale errori: {len(errors)}")
+
+        report_lines.append("")
+        report_lines.append("SUCCESSI")
+        if details:
+            for item in details:
+                asset_id = item.get('id', 'N/D')
+                symbol = item.get('symbol') or 'N/D'
+                price = item.get('price')
+                currency = item.get('currency') or ''
+                new_record = item.get('new_record_id', 'N/D')
+                if price is None:
+                    price_str = 'n/d'
+                elif currency:
+                    price_str = f"{price} {currency}"
+                else:
+                    price_str = str(price)
+                manual_suffix = " (aggiornamento manuale richiesto)" if item.get('manual') else ""
+                report_lines.append("- ID {asset_id} ({symbol}): prezzo {price_str} -> nuovo record {new_record}{suffix}".format(
+                    asset_id=asset_id, symbol=symbol, price_str=price_str, new_record=new_record, suffix=manual_suffix
+                ))
+        else:
+            report_lines.append("- Nessun asset aggiornato")
+
+        report_lines.append("")
+        report_lines.append("SALTATI")
+        if skipped:
+            for item in skipped:
+                asset_id = item.get('id', 'N/D')
+                reason_code = item.get('reason', 'motivo_non_specificato')
+                reason_desc = reason_map.get(reason_code, reason_code.replace('_', ' '))
+                change_pct = item.get('change_pct')
+                if change_pct is not None:
+                    report_lines.append(f"- ID {asset_id}: {reason_desc} (Δ {change_pct}% )")
+                else:
+                    report_lines.append(f"- ID {asset_id}: {reason_desc}")
+        else:
+            report_lines.append("- Nessun asset saltato")
+
+        report_lines.append("")
+        report_lines.append("ALERT VARIAZIONI")
+        if alerts:
+            price_alerts = [a for a in alerts if a.get('change_pct') is not None or a.get('change_ratio') is not None]
+            nav_alerts = [a for a in alerts if (a.get('type') or '').lower() == 'issuer_nav_unavailable']
+            manual_alerts = [a for a in alerts if (a.get('type') or '').lower() == 'manual_update_required']
+            for alert in price_alerts:
+                asset_id = alert.get('id', 'N/D')
+                symbol = alert.get('symbol') or 'N/D'
+                prev_price = alert.get('previous_price')
+                new_price = alert.get('new_price')
+                change_ratio = alert.get('change_ratio')
+                currency = alert.get('currency') or ''
+                change_pct = alert.get('change_pct')
+                if change_pct is None and change_ratio is not None:
+                    change_pct = round(change_ratio * 100, 2)
+                change_pct_str = f"{change_pct}%" if change_pct is not None else 'n/d'
+                if currency:
+                    report_lines.append(f"- ID {asset_id} ({symbol}): {prev_price} -> {new_price} {currency} (Δ {change_pct_str})")
+                else:
+                    report_lines.append(f"- ID {asset_id} ({symbol}): {prev_price} -> {new_price} (Δ {change_pct_str})")
+            for alert in nav_alerts:
+                asset_id = alert.get('id', 'N/D')
+                message = alert.get('message') or 'NAV emittente non disponibile'
+                report_lines.append(f"- ID {asset_id}: {message}")
+            for alert in manual_alerts:
+                asset_id = alert.get('id', 'N/D')
+                message = alert.get('message') or 'Aggiornare manualmente il valore'
+                report_lines.append(f"- ID {asset_id}: {message}")
+            if not price_alerts and not nav_alerts and not manual_alerts:
+                report_lines.append("- Nessuna variazione anomala")
+        else:
+            report_lines.append("- Nessuna variazione anomala")
+
+        report_lines.append("")
+        report_lines.append("ERRORI")
+        if errors:
+            for item in errors:
+                asset_id = item.get('id', 'N/D')
+                error_desc = item.get('error', 'Errore non specificato')
+                report_lines.append(f"- ID {asset_id}: {error_desc}")
+        else:
+            report_lines.append("- Nessun errore")
+
+        report_lines.append("")
+        report_lines.append("Nota: i nuovi record sono marcati con ""UPDATED BY AssetMind"" nel campo note.")
+
+        content = "\n".join(report_lines)
+
+        try:
+            textbox = ctk.CTkTextbox(window, wrap='word')
+        except AttributeError:
+            textbox = tk.Text(window, wrap='word')
+        textbox.pack(fill='both', expand=True, padx=20, pady=(20, 10))
+        textbox.insert('end', content)
+        try:
+            textbox.configure(state='disabled')
+        except (AttributeError, tk.TclError):
+            textbox['state'] = 'disabled'
+
+        close_button = ctk.CTkButton(window, text='Chiudi', command=window.destroy)
+        close_button.pack(pady=(0, 20))
+
     def _show_column_filter(self, column: str):
         """Gestisce la richiesta di filtro per una colonna"""
         # Il filtro viene gestito direttamente dal componente PortfolioTable
@@ -545,17 +855,245 @@ class GABAssetMind:
         try:
             if self.charts_ui:
                 self.charts_ui.cleanup()
-
             if self.portfolio_table:
                 self.portfolio_table.cleanup_performance_optimizers()
-
             if self.data_cache:
                 self.data_cache.clear()
-
             self.logger.info("Cleanup completato")
             
         except Exception as e:
             self.logger.error(f"Errore durante cleanup: {e}")
+
+class MarketUpdateProgressDialog:
+    """Finestra modale che mostra l'avanzamento dell'aggiornamento prezzi."""
+
+    def __init__(self, parent: ctk.CTk, total_assets: int) -> None:
+        self.parent = parent
+        self.total = max(int(total_assets), 0)
+        self.processed = 0
+
+        self.window = ctk.CTkToplevel(parent)
+        self.window.title("Aggiornamento prezzi in corso")
+        self.window.geometry("420x220")
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self.window.grab_set()
+        self.window.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        padding = 20
+        self.title_label = ctk.CTkLabel(
+            self.window,
+            text="Aggiornamento prezzi in corso",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        self.title_label.pack(pady=(padding, 10))
+
+        self.progress_bar = ctk.CTkProgressBar(self.window, width=320)
+        self.progress_bar.pack(pady=10, padx=padding, fill="x")
+
+        if self.total > 0:
+            self.progress_bar.set(0.0)
+        else:
+            self.progress_bar.configure(mode="indeterminate")
+            self.progress_bar.start()
+
+        self.status_label = ctk.CTkLabel(
+            self.window,
+            text="Preparazione...",
+            anchor="w",
+            justify="left",
+        )
+        self.status_label.pack(padx=padding, fill="x")
+
+        self.detail_label = ctk.CTkLabel(
+            self.window,
+            text="",
+            anchor="w",
+            justify="left",
+        )
+        self.detail_label.pack(padx=padding, fill="x", pady=(2, 0))
+
+        self.wait_label = ctk.CTkLabel(
+            self.window,
+            text="",
+            anchor="w",
+            justify="left",
+        )
+        self.wait_label.pack(padx=padding, fill="x", pady=(2, 0))
+
+        self.elapsed_label = ctk.CTkLabel(
+            self.window,
+            text="Tempo trascorso: 0s",
+            anchor="w",
+            justify="left",
+        )
+        self.elapsed_label.pack(padx=padding, fill="x", pady=(10, padding))
+
+        self._start_time = time.time()
+        self._elapsed_job: Optional[str] = self.window.after(1000, self._update_elapsed)
+
+    def handle_event(self, event: Dict[str, Any]) -> None:
+        stage = event.get('stage')
+
+        if stage == 'start':
+            total = event.get('total')
+            if total is not None:
+                self._set_total(total)
+            self.status_label.configure(text=f"Avvio aggiornamento ({self.total} asset)...")
+            self.detail_label.configure(text="")
+            self.wait_label.configure(text="")
+            return
+
+
+
+
+
+        if stage == 'item':
+            total = event.get('total', self.total)
+            if total is not None:
+                self._set_total(total)
+            self.processed = event.get('processed', self.processed)
+            updated = event.get('updated', 0)
+            skipped = event.get('skipped', 0)
+            errors = event.get('errors', 0)
+            self.status_label.configure(
+                text=(
+                    f"Elaborati {self.processed}/{self.total} - "
+                    f"Aggiornati {updated}, Saltati {skipped}, Errori {errors}"
+                )
+            )
+            asset_id = event.get('asset_id')
+            status_raw = (event.get('status') or '').lower()
+            status_map = {
+                'updated': 'Aggiornato',
+                'error': 'Errore',
+                'skipped': 'Saltato',
+                'invalid_id': 'ID non valido',
+                'missing_identifiers': 'Identificativi mancanti',
+                'missing_amount': 'Quantita mancante',
+                'base_record_missing': 'Record originale non trovato',
+                'price_not_positive': 'Prezzo non positivo',
+                'manual_update': 'Aggiornamento manuale',
+            }
+            status = status_map.get(status_raw, status_raw.replace('_', ' ').strip().capitalize())
+            message = event.get('message')
+            message_map = {
+                'missing_amount': 'Quantita mancante',
+                'price_not_numeric': 'Prezzo non numerico',
+                'price_not_positive': 'Prezzo non positivo',
+                'missing_identifiers': 'Identificativi mancanti',
+                'base_record_missing': 'Record originale non trovato',
+                'price_alert': 'Variazione oltre soglia',
+                'issuer_nav_unavailable': 'NAV emittente non disponibile',
+                'manual_update_required': 'Aggiornamento manuale richiesto',
+                'provider_error': 'Errore provider dati',
+                'unexpected_error': 'Errore inatteso',
+            }
+            if isinstance(message, str):
+                message = message_map.get(message.lower(), message)
+            if asset_id is not None:
+                detail = f"Ultimo asset ID {asset_id}"
+                if status:
+                    detail += f": {status}"
+                if message:
+                    detail += f" ({message}"
+                    change_pct_event = event.get('change_pct')
+                    if change_pct_event is not None:
+                        detail += f", Δ {change_pct_event}%"
+                    detail += ")"
+                self.detail_label.configure(text=detail)
+            else:
+                if status or message:
+                    detail = f"Stato: {status}" if status else "Stato"
+                    if message:
+                        detail += f" ({message})"
+                    self.detail_label.configure(text=detail)
+                else:
+                    self.detail_label.configure(text="")
+            self.wait_label.configure(text="")
+            self._update_progress_bar()
+            return
+
+
+        if stage in {'wait_start', 'wait'}:
+            remaining = event.get('remaining')
+            total_seconds = event.get('total_seconds')
+            if stage == 'wait_start' and total_seconds:
+                self.wait_label.configure(text=f"Pausa per rate limit: {total_seconds}s")
+                return
+            if remaining is not None:
+                self.wait_label.configure(text=f"Pausa per rate limit: {remaining}s rimanenti")
+            else:
+                self.wait_label.configure(text="Pausa per rate limit in corso...")
+            return
+
+
+        if stage == 'wait_end':
+            self.wait_label.configure(text="")
+            return
+
+        if stage == 'done':
+            self.wait_label.configure(text="")
+            if self.total > 0 and self.processed >= self.total:
+                self.progress_bar.set(1.0)
+                self.status_label.configure(text="Aggiornamento completato")
+            return
+
+    def close(self) -> None:
+        if self.total == 0:
+            try:
+                self.progress_bar.stop()
+            except Exception:
+                pass
+
+        if self._elapsed_job is not None:
+            try:
+                self.window.after_cancel(self._elapsed_job)
+            except Exception:
+                pass
+            self._elapsed_job = None
+
+        try:
+            self.window.grab_release()
+        except Exception:
+            pass
+
+        try:
+            self.window.destroy()
+        except tk.TclError:
+            pass
+
+    def _set_total(self, total: int) -> None:
+        if total is None:
+            return
+        if total <= 0:
+            if self.total != 0:
+                self.total = 0
+                self.progress_bar.configure(mode="indeterminate")
+                self.progress_bar.start()
+            return
+
+        if self.total == 0:
+            try:
+                self.progress_bar.stop()
+            except Exception:
+                pass
+            self.progress_bar.configure(mode="determinate")
+
+        self.total = max(total, 1)
+        self._update_progress_bar()
+
+    def _update_progress_bar(self) -> None:
+        if self.total <= 0:
+            return
+        fraction = min(1.0, max(0.0, self.processed / self.total))
+        self.progress_bar.set(fraction)
+
+    def _update_elapsed(self) -> None:
+        elapsed = int(time.time() - self._start_time)
+        self.elapsed_label.configure(text=f"Tempo trascorso: {elapsed}s")
+        self._elapsed_job = self.window.after(1000, self._update_elapsed)
+
 
 def main():
     """Funzione principale di avvio"""
@@ -603,3 +1141,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

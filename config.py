@@ -111,6 +111,11 @@ class AssetConfig:
     # Livelli di rischio
     RISK_LEVELS = ["1", "2", "3", "4", "5"]
     
+    # Categorie che richiedono identificativi completi per i dati di mercato
+    MARKET_IDENTIFIER_CATEGORIES = {
+        "ETF", "Azioni", "Fondi di investimento", "PAC", "Criptovalute"
+    }
+
     # Mappatura campi rilevanti per categoria
     CATEGORY_FIELD_MAPPING = {
         "ETF": ["ticker", "isin", "income_per_year"],

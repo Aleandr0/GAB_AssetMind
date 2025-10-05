@@ -6,3 +6,7 @@ reportlab>=4.0.0
 tkcalendar>=1.6.0
 Pillow>=10.0.0
 numpy>=1.24.0
+requests>=2.31.0
+twelvedata>=1.2.6
+pytest>=8.0.0
+yfinance>=0.2.40

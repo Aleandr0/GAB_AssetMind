@@ -233,16 +233,17 @@ class LazyColumnResizer:
                         if item_values:
                             col_index = list(self.treeview['columns']).index(col)
                             if col_index < len(item_values):
-                                cell_text = str(item_values[col_index])[:50]  # Tronca testo lungo
+                                cell_text = str(item_values[col_index])  # NON troncare testo
                                 content_width = current_font.measure(cell_text)
                                 max_content_width = max(max_content_width, content_width)
 
-                    # Calcola larghezza finale
-                    calculated_width = max(max_header_width, max_content_width) + 20
+                    # Calcola larghezza finale con padding maggiorato
+                    padding = 50  # Aumentato da 20 a 50 per compensare margini celle
+                    calculated_width = max(max_header_width, max_content_width) + padding
 
                     # Limiti e cache
                     min_width = 60
-                    max_width = 300
+                    max_width = 500  # Aumentato da 300 a 500
                     final_width = max(min_width, min(max_width, calculated_width))
 
                     # Applica solo se differenza significativa (>10px o >20%)

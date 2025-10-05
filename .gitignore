@@ -44,3 +44,11 @@ portfolio_backup_*.xlsx
 # Temporary files
 *.tmp
 *.temp
+
+TWELVE_DATA_API_KEY.txt
+
+# Logs e report generati
+EXPORT FILE/
+report_*.pdf
+Appunti.doc
+logs/*.log
