@@ -280,7 +280,8 @@ class MarketDataService:
                 fallback_symbols = self._normalize_symbol_list([issuer_data.get("fallback_symbol")]) if issuer_data.get("fallback_symbol") else []
                 if fallback_symbols:
                     info["candidate_symbols"] = self._prioritize_symbols(normalized, fallback_symbols)
-                info["allow_yahoo_fallback"] = False
+                # Permetti fallback yfinance se c'è un fallback_symbol configurato
+                info["allow_yahoo_fallback"] = bool(fallback_symbols)
 
             return info
 
@@ -377,7 +378,22 @@ class MarketDataService:
                 return QuoteResult(False, error="Provider Yahoo disabilitato dalla configurazione.")
             return self._quote_from_yahoo_candidates(symbol_info)
         if preferred_provider == "issuer_blackrock":
-            return self._quote_from_issuer_nav(symbol_info)
+            nav_result = self._quote_from_issuer_nav(symbol_info)
+            if nav_result.success:
+                return nav_result
+            # Fallback a yfinance se NAV non disponibile e allow_yahoo_fallback è True
+            if symbol_info.get("allow_yahoo_fallback") and self._is_provider_enabled("yahoo"):
+                self.logger.info("Fallback yfinance per NAV emittente: %s", nav_result.error)
+                yahoo_result = self._quote_from_yahoo_candidates(symbol_info)
+                if yahoo_result.success:
+                    return yahoo_result
+                # Combina errori se anche yfinance fallisce
+                combined_error = nav_result.error
+                if yahoo_result.error:
+                    combined_error = f"{nav_result.error} | Fallback yfinance: {yahoo_result.error}"
+                return QuoteResult(False, error=combined_error, provider_used="issuer_nav")
+            # Nessun fallback disponibile, ritorna errore NAV
+            return nav_result
 
         try:
             quote = self._fetch_quote(symbol)
