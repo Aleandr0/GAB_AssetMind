@@ -40,7 +40,7 @@ ISSUER_NAV_CONFIG: Dict[str, Dict[str, Any]] = {
         "fund_id": "253114",
         "currency": "EUR",
         "name": "BGF World Technology E2 EUR",
-        "fallback_symbol": "0P0001LZU2.F",
+        "fallback_symbol": "0P00000SK7",  # USD-quoted, requires conversion
     },
 }
 
@@ -48,6 +48,14 @@ YAHOO_SYMBOL_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "IE00B0M62X26": {
         "symbols": ["IBCI.L", "IBCI.AS"],
         "name": "iShares EUR Inflation Linked Govt Bond UCITS ETF EUR Acc",
+    },
+    "IE00B8FHGS14": {
+        "symbols": ["MVOL.MI", "MVOL.L", "QDVE.DE"],  # Milano EUR first
+        "name": "iShares Edge MSCI World Minimum Volatility UCITS ETF USD Acc",
+    },
+    "IE00BKM4GZ66": {
+        "symbols": ["EIMI.MI", "IS3N.DE", "EIMI.L"],  # Milano EUR first
+        "name": "iShares Core MSCI EM IMI UCITS ETF USD Acc",
     },
     "IE00B4L5Y983": {
         "symbols": ["SWDA.MI", "IWDA.L"],  # Milano EUR prima
