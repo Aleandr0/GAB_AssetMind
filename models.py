@@ -337,13 +337,13 @@ class PortfolioManager:
                 return  # Nessuna richiesta = nessuna pausa necessaria
 
             # TwelveData: 8 richieste/minuto
-            # Strategia: pausa di 8 secondi ogni 8 richieste (7.5 sec safety)
+            # Strategia: pausa di 60+ secondi ogni 8 richieste per reset completo
             REQUESTS_PER_MINUTE = 8
-            PAUSE_SECONDS = 8  # Pausa sicura tra batch
+            PAUSE_SECONDS = 65  # 60s reset + 5s safety margin
 
             if row_position % REQUESTS_PER_MINUTE == 0:
                 import time
-                self.logger.info(f"Rate limiting: pausa di {PAUSE_SECONDS}s dopo {row_position} richieste...")
+                self.logger.info(f"Rate limiting TwelveData: pausa di {PAUSE_SECONDS}s dopo {row_position} richieste per reset quota...")
                 time.sleep(PAUSE_SECONDS)
 
         try:
