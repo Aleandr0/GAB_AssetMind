@@ -1134,6 +1134,20 @@ class MarketUpdateProgressDialog:
                 self.wait_label.configure(text="Pausa per rate limit in corso...")
             return
 
+        if stage == 'rate_limit_wait':
+            remaining = event.get('remaining_seconds')
+            total_seconds = event.get('total_seconds')
+            if remaining is not None and total_seconds is not None:
+                self.wait_label.configure(text=f"Attesa TwelveData: {remaining}s rimanenti (di {total_seconds}s)")
+            elif total_seconds is not None:
+                self.wait_label.configure(text=f"Attesa TwelveData: {total_seconds}s")
+            else:
+                self.wait_label.configure(text="Attesa TwelveData in corso...")
+            return
+
+        if stage == 'rate_limit_done':
+            self.wait_label.configure(text="")
+            return
 
         if stage == 'wait_end':
             self.wait_label.configure(text="")

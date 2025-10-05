@@ -344,7 +344,25 @@ class PortfolioManager:
             if row_position % REQUESTS_PER_MINUTE == 0:
                 import time
                 self.logger.info(f"Rate limiting TwelveData: pausa di {PAUSE_SECONDS}s dopo {row_position} richieste per reset quota...")
-                time.sleep(PAUSE_SECONDS)
+
+                # Notifica l'inizio del countdown
+                _notify_progress({
+                    'stage': 'rate_limit_wait',
+                    'total_seconds': PAUSE_SECONDS,
+                    'remaining_seconds': PAUSE_SECONDS,
+                })
+
+                # Countdown con aggiornamenti ogni secondo
+                for remaining in range(PAUSE_SECONDS, 0, -1):
+                    time.sleep(1)
+                    _notify_progress({
+                        'stage': 'rate_limit_wait',
+                        'total_seconds': PAUSE_SECONDS,
+                        'remaining_seconds': remaining - 1,
+                    })
+
+                # Notifica fine attesa
+                _notify_progress({'stage': 'rate_limit_done'})
 
         try:
             df_all = self.load_data()
