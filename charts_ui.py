@@ -81,7 +81,8 @@ class ChartsUI(BaseUIComponent):
             "Distribuzione Valore per Categoria",
             "Distribuzione Rischio",
             "Performance per Categoria",
-            "Evoluzione Temporale"
+            "Evoluzione Temporale",
+            "Suddivisione Asset per Posizione"
         ]
 
         self.chart_type = ctk.StringVar(value=chart_types[0])
@@ -258,6 +259,8 @@ class ChartsUI(BaseUIComponent):
                 self._create_performance_chart(df)
             elif chart_type == "Evoluzione Temporale":
                 self._create_temporal_chart(df)
+            elif chart_type == "Suddivisione Asset per Posizione":
+                self._create_position_distribution_chart(df)
             
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico: {e}")
@@ -777,10 +780,81 @@ class ChartsUI(BaseUIComponent):
             ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             
             self._display_chart(fig)
-            
+
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico temporale: {e}")
-    
+
+    def _create_position_distribution_chart(self, df: pd.DataFrame):
+        """Crea grafico a torta della suddivisione asset per posizione"""
+        try:
+            # Calcola il numero di asset per posizione
+            if 'position' not in df.columns:
+                self._show_no_data_message("Campo 'position' non presente nei dati")
+                return
+
+            # Rimuovi valori vuoti/NaN
+            position_counts = df['position'].fillna('Non specificata').value_counts()
+
+            if position_counts.empty:
+                self._show_no_data_message("Nessun dato di posizione disponibile")
+                return
+
+            # Crea il grafico
+            fig, ax = plt.subplots(figsize=(10, 8))
+
+            # Colori personalizzati
+            colors = plt.cm.Set3(np.linspace(0, 1, len(position_counts)))
+
+            # Calcola le percentuali per la legenda
+            total_assets = position_counts.sum()
+            percentages = (position_counts / total_assets * 100).round(2)
+
+            wedges, texts, autotexts = ax.pie(
+                position_counts.values,
+                labels=position_counts.index,
+                autopct='%1.2f%%',
+                colors=colors,
+                startangle=90,
+                textprops={'fontsize': 10},
+                pctdistance=0.7
+            )
+
+            # Migliora leggibilità delle etichette
+            for text in texts:
+                text.set_fontsize(11)
+                text.set_weight('bold')
+
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontsize(9)
+                autotext.set_weight('bold')
+
+            # Titolo
+            ax.set_title(
+                'Suddivisione Asset per Posizione',
+                fontsize=14,
+                weight='bold',
+                pad=20
+            )
+
+            # Legenda con numero di asset e percentuale
+            legend_labels = [
+                f'{pos}: {count} asset ({pct}%)'
+                for pos, count, pct in zip(position_counts.index, position_counts.values, percentages)
+            ]
+            ax.legend(
+                legend_labels,
+                loc='center left',
+                bbox_to_anchor=(1, 0, 0.5, 1),
+                fontsize=10
+            )
+
+            plt.tight_layout()
+            self._display_chart(fig)
+
+        except Exception as e:
+            self._show_error_message(f"Errore nella creazione del grafico posizione: {e}")
+
     def _save_debug_table_to_excel(self, timeline_data, categories):
         """Salva tabella debug con date e categorie nel file Excel"""
         try:
