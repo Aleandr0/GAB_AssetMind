@@ -785,33 +785,45 @@ class ChartsUI(BaseUIComponent):
             self._show_error_message(f"Errore nella creazione del grafico temporale: {e}")
 
     def _create_position_distribution_chart(self, df: pd.DataFrame):
-        """Crea grafico a torta della suddivisione asset per posizione"""
+        """Crea grafico a torta della suddivisione valore per posizione"""
         try:
-            # Calcola il numero di asset per posizione
             if 'position' not in df.columns:
                 self._show_no_data_message("Campo 'position' non presente nei dati")
                 return
 
-            # Rimuovi valori vuoti/NaN
-            position_counts = df['position'].fillna('Non specificata').value_counts()
+            # Prepara dati con posizione normalizzata
+            df_work = df.copy()
+            df_work['position'] = df_work['position'].fillna('Non specificata')
 
-            if position_counts.empty:
-                self._show_no_data_message("Nessun dato di posizione disponibile")
+            # Calcola il valore corrente per ogni asset (come nel Portfolio Summary)
+            df_work['current_value'] = df_work['updated_total_value'].fillna(df_work['created_total_value']).fillna(0)
+
+            # Calcola VALORE TOTALE per posizione (per il grafico)
+            position_values = df_work.groupby('position')['current_value'].sum()
+
+            # Calcola NUMERO di asset per posizione (per la legenda)
+            position_counts = df_work.groupby('position').size()
+
+            # Filtra posizioni con valore > 0
+            position_values = position_values[position_values > 0]
+
+            if position_values.empty:
+                self._show_no_data_message("Nessun valore da visualizzare")
                 return
 
             # Crea il grafico
             fig, ax = plt.subplots(figsize=(10, 8))
 
             # Colori personalizzati
-            colors = plt.cm.Set3(np.linspace(0, 1, len(position_counts)))
+            colors = plt.cm.Set3(np.linspace(0, 1, len(position_values)))
 
-            # Calcola le percentuali per la legenda
-            total_assets = position_counts.sum()
-            percentages = (position_counts / total_assets * 100).round(2)
+            # Calcola le percentuali sul VALORE (per il grafico)
+            total_value = position_values.sum()
+            value_percentages = (position_values / total_value * 100).round(2)
 
             wedges, texts, autotexts = ax.pie(
-                position_counts.values,
-                labels=position_counts.index,
+                position_values.values,
+                labels=position_values.index,
                 autopct='%1.2f%%',
                 colors=colors,
                 startangle=90,
@@ -831,22 +843,22 @@ class ChartsUI(BaseUIComponent):
 
             # Titolo
             ax.set_title(
-                'Suddivisione Asset per Posizione',
+                'Suddivisione Valore per Posizione',
                 fontsize=14,
                 weight='bold',
                 pad=20
             )
 
-            # Legenda con numero di asset e percentuale
+            # Legenda con numero di asset, valore totale e percentuale
             legend_labels = [
-                f'{pos}: {count} asset ({pct}%)'
-                for pos, count, pct in zip(position_counts.index, position_counts.values, percentages)
+                f'{pos}: {position_counts[pos]} asset, €{position_values[pos]:,.2f} ({value_percentages[pos]}%)'
+                for pos in position_values.index
             ]
             ax.legend(
                 legend_labels,
                 loc='center left',
                 bbox_to_anchor=(1, 0, 0.5, 1),
-                fontsize=10
+                fontsize=9
             )
 
             plt.tight_layout()
