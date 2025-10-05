@@ -655,6 +655,76 @@ class GABAssetMind:
     
         threading.Thread(target=run_update, daemon=True).start()
 
+    def _generate_update_recommendations(self, errors: list, alerts: list, skipped: list) -> List[str]:
+        """Genera raccomandazioni per migliorare futuri aggiornamenti prezzi."""
+        recommendations = []
+        seen_recommendations = set()
+
+        # Analizza errori
+        for error in errors:
+            error_msg = str(error.get('error', '')).lower()
+            asset_id = error.get('id')
+
+            if 'pro plan' in error_msg or 'grow plan' in error_msg:
+                rec = f"ID {asset_id}: Aggiungere suffisso exchange al ticker (es. .MI, .L, .DE) per usare Yahoo Finance invece di TwelveData Pro"
+                if rec not in seen_recommendations:
+                    recommendations.append(rec)
+                    seen_recommendations.add(rec)
+
+            elif 'symbol' in error_msg and 'invalid' in error_msg:
+                rec = f"ID {asset_id}: Correggere il ticker con simbolo valido includendo exchange (es. TICKER.MI)"
+                if rec not in seen_recommendations:
+                    recommendations.append(rec)
+                    seen_recommendations.add(rec)
+
+            elif 'currenttradingperiod' in error_msg or 'yfinance' in error_msg:
+                rec = f"ID {asset_id}: Il ticker potrebbe essere delisted o non disponibile su Yahoo Finance - verificare e aggiornare"
+                if rec not in seen_recommendations:
+                    recommendations.append(rec)
+                    seen_recommendations.add(rec)
+
+        # Analizza alert
+        for alert in alerts:
+            alert_type = (alert.get('type') or '').lower()
+            asset_id = alert.get('id')
+            message = str(alert.get('message', '')).lower()
+
+            if alert_type == 'issuer_nav_unavailable':
+                rec = f"ID {asset_id}: Il NAV dell'emittente non e' disponibile - considerare di aggiungere un ticker Yahoo Finance alternativo"
+                if rec not in seen_recommendations:
+                    recommendations.append(rec)
+                    seen_recommendations.add(rec)
+
+            elif alert_type == 'manual_update_required':
+                if 'pro plan' in message or 'grow plan' in message:
+                    rec = f"ID {asset_id}: Aggiungere exchange suffix al ticker per evitare limitazioni TwelveData"
+                    if rec not in seen_recommendations:
+                        recommendations.append(rec)
+                        seen_recommendations.add(rec)
+
+            elif 'change_pct' in alert:
+                change_pct = alert.get('change_pct')
+                if change_pct and abs(change_pct) > 50:
+                    rec = f"ID {asset_id}: Variazione {change_pct}% anomala - verificare che il ticker corrisponda all'exchange corretto (EUR vs USD/GBP)"
+                    if rec not in seen_recommendations:
+                        recommendations.append(rec)
+                        seen_recommendations.add(rec)
+
+        # Analizza skipped
+        missing_ids_count = 0
+        for skip in skipped:
+            reason = skip.get('reason', '')
+            if reason == 'missing_identifiers':
+                missing_ids_count += 1
+
+        if missing_ids_count > 0:
+            rec = f"Ci sono {missing_ids_count} asset senza ticker/ISIN - aggiungerli per abilitare aggiornamenti automatici"
+            if rec not in seen_recommendations:
+                recommendations.append(rec)
+                seen_recommendations.add(rec)
+
+        return recommendations
+
     def _show_market_update_report(self, result: Dict[str, Any]):
         """Mostra un report dettagliato dell'aggiornamento prezzi."""
         if not result:
@@ -773,6 +843,15 @@ class GABAssetMind:
                 report_lines.append(f"- ID {asset_id}: {error_desc}")
         else:
             report_lines.append("- Nessun errore")
+
+        # Genera raccomandazioni per migliorare i futuri aggiornamenti
+        recommendations = self._generate_update_recommendations(errors, alerts, skipped)
+        if recommendations:
+            report_lines.append("")
+            report_lines.append("RACCOMANDAZIONI PER L'UTENTE")
+            report_lines.append("Per migliorare i futuri aggiornamenti automatici, considera di:")
+            for rec in recommendations:
+                report_lines.append(f"- {rec}")
 
         report_lines.append("")
         report_lines.append("Nota: i nuovi record sono marcati con ""UPDATED BY AssetMind"" nel campo note.")
