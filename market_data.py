@@ -74,7 +74,7 @@ YAHOO_SYMBOL_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "name": "iShares Global Aggregate Bond UCITS ETF EUR Hedged Acc",
     },
     "IE000BI8OT95": {
-        "symbols": ["CW8.PA", "CW8.MI", "CW8.DE"],
+        "symbols": ["MWRD.PA", "CW8.PA", "CW8.MI"],  # MWRD.PA = 136 EUR (Trade Republic)
         "name": "Amundi Core MSCI World UCITS ETF Acc",
     },
     "IE000QU8JEH5": {
