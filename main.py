@@ -655,10 +655,38 @@ class GABAssetMind:
     
         threading.Thread(target=run_update, daemon=True).start()
 
-    def _generate_update_recommendations(self, errors: list, alerts: list, skipped: list) -> List[str]:
+    def _generate_update_recommendations(self, errors: list, alerts: list, skipped: list, details: list = None) -> List[str]:
         """Genera raccomandazioni per migliorare futuri aggiornamenti prezzi."""
         recommendations = []
         seen_recommendations = set()
+
+        # Analizza conversioni valuta applicate
+        if details:
+            converted_assets = []
+            for detail in details:
+                if detail.get('conversion_applied'):
+                    asset_id = detail.get('id')
+                    original_price = detail.get('original_price')
+                    original_currency = detail.get('original_currency')
+                    conversion_rate = detail.get('conversion_rate')
+                    converted_price = detail.get('price')
+                    if asset_id and original_price and original_currency and conversion_rate:
+                        converted_assets.append({
+                            'id': asset_id,
+                            'original_price': original_price,
+                            'original_currency': original_currency,
+                            'rate': conversion_rate,
+                            'converted_price': converted_price,
+                        })
+
+            if converted_assets:
+                rec = "CONVERSIONI VALUTA APPLICATE:"
+                recommendations.append(rec)
+                for conv in converted_assets:
+                    rec = f"  ID {conv['id']}: {conv['original_price']:.2f} {conv['original_currency']} -> {conv['converted_price']:.2f} EUR (tasso: {conv['rate']:.4f})"
+                    recommendations.append(rec)
+                rec = "  Nota: Il ticker quota in valuta estera. Considera di cercare un ticker equivalente quotato in EUR per evitare conversioni."
+                recommendations.append(rec)
 
         # Analizza errori
         for error in errors:
@@ -845,7 +873,7 @@ class GABAssetMind:
             report_lines.append("- Nessun errore")
 
         # Genera raccomandazioni per migliorare i futuri aggiornamenti
-        recommendations = self._generate_update_recommendations(errors, alerts, skipped)
+        recommendations = self._generate_update_recommendations(errors, alerts, skipped, details)
         if recommendations:
             report_lines.append("")
             report_lines.append("RACCOMANDAZIONI PER L'UTENTE")

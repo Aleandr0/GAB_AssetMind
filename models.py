@@ -523,6 +523,46 @@ class PortfolioManager:
                 _maybe_pause(request_attempted, row_index)
                 continue
 
+            # Conversione automatica valuta se necessario
+            quote_currency = (quote_data.get('currency') or '').upper()
+            expected_currency = 'EUR'  # Valuta di default dell'applicazione
+            conversion_rate = None
+            original_price = None
+            original_currency = None
+
+            if quote_currency and quote_currency != expected_currency:
+                self.logger.info(
+                    f"ID {asset_id}: prezzo in {quote_currency}, conversione automatica in {expected_currency}"
+                )
+                try:
+                    # Usa yfinance per ottenere il tasso di cambio
+                    import yfinance as yf
+                    currency_pair = f"{quote_currency}{expected_currency}=X"
+                    ticker_fx = yf.Ticker(currency_pair)
+                    fx_rate = ticker_fx.fast_info.last_price
+
+                    if fx_rate and fx_rate > 0:
+                        original_price = price_value
+                        original_currency = quote_currency
+                        price_value = price_value * fx_rate
+                        conversion_rate = fx_rate
+                        self.logger.info(
+                            f"ID {asset_id}: conversione {original_price} {quote_currency} -> {price_value:.4f} {expected_currency} (tasso: {fx_rate:.4f})"
+                        )
+                        quote_data['currency'] = expected_currency
+                        quote_data['conversion_applied'] = True
+                        quote_data['original_price'] = original_price
+                        quote_data['original_currency'] = original_currency
+                        quote_data['conversion_rate'] = conversion_rate
+                    else:
+                        self.logger.warning(
+                            f"ID {asset_id}: tasso di cambio {currency_pair} non disponibile, uso prezzo originale"
+                        )
+                except Exception as fx_exc:
+                    self.logger.warning(
+                        f"ID {asset_id}: impossibile convertire {quote_currency} -> {expected_currency}: {fx_exc}"
+                    )
+
             if price_value <= 0:
                 manual_created = _create_manual_placeholder(
                     asset_id=asset_id,
@@ -646,6 +686,11 @@ class PortfolioManager:
             if price_alert_info:
                 detail_entry['alert'] = True
                 detail_entry['change_pct'] = price_alert_info.get('change_pct')
+            if quote_data.get('conversion_applied'):
+                detail_entry['conversion_applied'] = True
+                detail_entry['original_price'] = quote_data.get('original_price')
+                detail_entry['original_currency'] = quote_data.get('original_currency')
+                detail_entry['conversion_rate'] = quote_data.get('conversion_rate')
             summary['details'].append(detail_entry)
 
             next_id += 1
