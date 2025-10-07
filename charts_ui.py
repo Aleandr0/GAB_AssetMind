@@ -435,11 +435,17 @@ class ChartsUI(BaseUIComponent):
             category_performance = category_performance[category_performance.abs() > 1]
             
             if category_performance.empty:
-                self._show_no_data_message("Nessuna performance da visualizzare")
+                if ax is None:
+                    self._show_no_data_message("Nessuna performance da visualizzare")
                 return
-            
+
             # Crea il grafico
-            fig, ax = plt.subplots(figsize=(12, 6))
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                external_ax = False
+            else:
+                fig = ax.figure
+                external_ax = True
             
             # Colori: verde per guadagni, rosso per perdite
             colors = ['#16a34a' if x >= 0 else '#dc2626' for x in category_performance.values]
@@ -466,10 +472,15 @@ class ChartsUI(BaseUIComponent):
                        f'€{value:,.0f}', ha='center', 
                        va='bottom' if height >= 0 else 'top',
                        fontweight='bold', fontsize=9)
-            
+
             plt.tight_layout()
-            self._display_chart(fig)
-            
+
+            # Mostra il grafico solo se non è un asse esterno
+            if not external_ax:
+                self._display_chart(fig)
+            else:
+                fig.canvas.draw_idle()
+
         except Exception as e:
             self._show_error_message(f"Errore nel grafico performance: {e}")
     
@@ -836,8 +847,13 @@ class ChartsUI(BaseUIComponent):
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico temporale: {e}")
 
-    def _create_position_distribution_chart(self, df: pd.DataFrame):
-        """Crea grafico a torta della suddivisione valore per posizione"""
+    def _create_position_distribution_chart(self, df: pd.DataFrame, ax=None):
+        """Crea grafico a torta della suddivisione valore per posizione
+
+        Args:
+            df: DataFrame con i dati del portfolio
+            ax: Asse matplotlib opzionale. Se None, crea una nuova figura.
+        """
         try:
             if 'position' not in df.columns:
                 self._show_no_data_message("Campo 'position' non presente nei dati")
@@ -860,11 +876,17 @@ class ChartsUI(BaseUIComponent):
             position_values = position_values[position_values > 0]
 
             if position_values.empty:
-                self._show_no_data_message("Nessun valore da visualizzare")
+                if ax is None:
+                    self._show_no_data_message("Nessun valore da visualizzare")
                 return
 
             # Crea il grafico
-            fig, ax = plt.subplots(figsize=(10, 8))
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(10, 8))
+                external_ax = False
+            else:
+                fig = ax.figure
+                external_ax = True
 
             # Colori personalizzati
             colors = plt.cm.Set3(np.linspace(0, 1, len(position_values)))
@@ -914,7 +936,12 @@ class ChartsUI(BaseUIComponent):
             )
 
             plt.tight_layout()
-            self._display_chart(fig)
+
+            # Mostra il grafico solo se non è un asse esterno
+            if not external_ax:
+                self._display_chart(fig)
+            else:
+                fig.canvas.draw_idle()
 
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico posizione: {e}")
