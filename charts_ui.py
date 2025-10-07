@@ -84,6 +84,7 @@ class ChartsUI(BaseUIComponent):
             "Evoluzione Temporale",
             "Suddivisione Asset per Posizione"
         ]
+        self.available_chart_types = chart_types
 
         self.chart_type = ctk.StringVar(value=chart_types[0])
 
@@ -1164,5 +1165,19 @@ class ChartsUI(BaseUIComponent):
         else:
             self.filter_label.configure(text="")
 
+    def select_chart(self, chart_name: str):
+        """Seleziona e visualizza un grafico specifico
+
+        Args:
+            chart_name: Nome del grafico da visualizzare (es. "Evoluzione Temporale")
+        """
+        # Verifica che il grafico richiesto sia nella lista disponibile
+        if chart_name in self.available_chart_types:
+            # Cambia il valore del dropdown
+            self.chart_type.set(chart_name)
+            # Aggiorna il grafico visualizzato
+            self._update_chart()
+        else:
+            self.logger.warning(f"Grafico '{chart_name}' non trovato nella lista disponibile")
 
 
