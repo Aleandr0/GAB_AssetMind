@@ -144,10 +144,15 @@ class GABAssetMind:
     
     def _setup_specialized_components(self):
         """Configura i componenti specializzati per ogni pagina"""
-        # Dashboard Component
+        # Charts UI Component (creato PRIMA del dashboard perché serve per il rendering)
+        self.charts_ui = ChartsUI(self.page_frames["Grafici"], self.portfolio_manager)
+        self.charts_ui.create_charts_interface()
+
+        # Dashboard Component (passa charts_ui per riutilizzare la stessa logica di rendering)
         self.roadmap_dashboard = RoadMapDashboard(
             self.page_frames["RoadMap"],
             self.portfolio_manager,
+            charts_ui_instance=self.charts_ui,
             on_navigate=self._navigate_from_dashboard,
         )
         self.roadmap_dashboard.refresh()
@@ -155,14 +160,10 @@ class GABAssetMind:
         # Portfolio Table Component
         self.portfolio_table = PortfolioTable(self.page_frames["Portfolio"], self.portfolio_manager)
         self.portfolio_table.create_table()
-        
-        # Asset Form Component  
+
+        # Asset Form Component
         self.asset_form = AssetForm(self.page_frames["Asset"], self.portfolio_manager)
         self.asset_form.create_form()
-        
-        # Charts UI Component
-        self.charts_ui = ChartsUI(self.page_frames["Grafici"], self.portfolio_manager)
-        self.charts_ui.create_charts_interface()
         
         # Export UI Component
         self.export_ui = ExportUI(self.page_frames["Export"], self.portfolio_manager)
