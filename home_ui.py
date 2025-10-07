@@ -20,10 +20,12 @@ class RoadMapDashboard:
         self,
         container: ctk.CTkFrame,
         portfolio_manager,
+        charts_ui_instance=None,
         on_navigate: Optional[Callable[[str, Optional[str]], None]] = None,
     ) -> None:
         self.container = container
         self.portfolio_manager = portfolio_manager
+        self.charts_ui = charts_ui_instance
         self.on_navigate = on_navigate
 
         self.summary_labels: Dict[str, ctk.CTkLabel] = {}
