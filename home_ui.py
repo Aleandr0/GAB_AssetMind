@@ -11,13 +11,6 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from utils import CurrencyFormatter, DateFormatter
-from chart_rendering import (
-    render_value_distribution,
-    render_risk_distribution,
-    render_performance,
-    render_position_distribution,
-    render_timeline,
-)
 
 
 class RoadMapDashboard:
@@ -282,60 +275,69 @@ class RoadMapDashboard:
     # Rendering grafici
     # ------------------------------------------------------------------
     def _render_timeline(self, selection: Optional[pd.DataFrame]) -> None:
+        """Usa ChartsUI per rendering coerente con schermata Grafici"""
+        if not self.charts_ui:
+            return
         chart = self.chart_objects.get("timeline")
-        if not chart:
+        if not chart or not chart.get("axis"):
             return
-
-        render_success = render_timeline(
-            chart["axis"],
-            self.portfolio_manager,
-            selection,
-            filter_info=None,
-        )
-        if chart.get("canvas"):
-            chart["canvas"].draw_idle()
-        if not render_success:
-            return
+        df = selection if selection is not None else self.portfolio_manager.get_current_assets_only()
+        try:
+            self.charts_ui._create_temporal_chart(df, ax=chart["axis"])
+        except Exception as e:
+            print(f"Errore rendering timeline: {e}")
 
     def _render_value_distribution(self, dataframe: Optional[pd.DataFrame]) -> None:
-        chart = self.chart_objects.get("category")
-        if not chart:
+        """Usa ChartsUI per rendering coerente"""
+        if not self.charts_ui:
             return
-
-        df = dataframe if dataframe is not None else pd.DataFrame()
-        render_value_distribution(chart["axis"], df)
-        if chart.get("canvas"):
-            chart["canvas"].draw_idle()
+        chart = self.chart_objects.get("category")
+        if not chart or not chart.get("axis"):
+            return
+        df = dataframe if dataframe is not None else self.portfolio_manager.get_current_assets_only()
+        try:
+            self.charts_ui._create_value_distribution_chart(df, ax=chart["axis"])
+        except Exception as e:
+            print(f"Errore rendering distribution: {e}")
 
     def _render_risk_distribution(self, dataframe: Optional[pd.DataFrame]) -> None:
-        chart = self.chart_objects.get("risk")
-        if not chart:
+        """Usa ChartsUI per rendering coerente"""
+        if not self.charts_ui:
             return
-
-        df = dataframe if dataframe is not None else pd.DataFrame()
-        render_risk_distribution(chart["axis"], df)
-        if chart.get("canvas"):
-            chart["canvas"].draw_idle()
+        chart = self.chart_objects.get("risk")
+        if not chart or not chart.get("axis"):
+            return
+        df = dataframe if dataframe is not None else self.portfolio_manager.get_current_assets_only()
+        try:
+            self.charts_ui._create_risk_distribution_chart(df, ax=chart["axis"])
+        except Exception as e:
+            print(f"Errore rendering risk: {e}")
 
     def _render_performance(self, dataframe: Optional[pd.DataFrame]) -> None:
-        chart = self.chart_objects.get("performance")
-        if not chart:
+        """Usa ChartsUI per rendering coerente"""
+        if not self.charts_ui:
             return
-
-        df = dataframe if dataframe is not None else pd.DataFrame()
-        render_performance(chart["axis"], df)
-        if chart.get("canvas"):
-            chart["canvas"].draw_idle()
+        chart = self.chart_objects.get("performance")
+        if not chart or not chart.get("axis"):
+            return
+        df = dataframe if dataframe is not None else self.portfolio_manager.get_current_assets_only()
+        try:
+            self.charts_ui._create_performance_chart(df, ax=chart["axis"])
+        except Exception as e:
+            print(f"Errore rendering performance: {e}")
 
     def _render_position_distribution(self, dataframe: Optional[pd.DataFrame]) -> None:
-        chart = self.chart_objects.get("position")
-        if not chart:
+        """Usa ChartsUI per rendering coerente"""
+        if not self.charts_ui:
             return
-
-        df = dataframe if dataframe is not None else pd.DataFrame()
-        render_position_distribution(chart["axis"], df)
-        if chart.get("canvas"):
-            chart["canvas"].draw_idle()
+        chart = self.chart_objects.get("position")
+        if not chart or not chart.get("axis"):
+            return
+        df = dataframe if dataframe is not None else self.portfolio_manager.get_current_assets_only()
+        try:
+            self.charts_ui._create_position_distribution_chart(df, ax=chart["axis"])
+        except Exception as e:
+            print(f"Errore rendering position: {e}")
 
     # ------------------------------------------------------------------
     # Tabella rendimenti
