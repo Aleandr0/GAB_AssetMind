@@ -265,8 +265,13 @@ class ChartsUI(BaseUIComponent):
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico: {e}")
     
-    def _create_value_distribution_chart(self, df: pd.DataFrame):
-        """Crea grafico a torta della distribuzione valore per categoria"""
+    def _create_value_distribution_chart(self, df: pd.DataFrame, ax=None):
+        """Crea grafico a torta della distribuzione valore per categoria
+
+        Args:
+            df: DataFrame con i dati del portfolio
+            ax: Asse matplotlib opzionale. Se None, crea una nuova figura.
+        """
         try:
             # Calcola i valori per categoria usando la stessa logica del Portfolio Summary
             df['current_value'] = df['updated_total_value'].fillna(df['created_total_value']).fillna(0)
@@ -288,11 +293,17 @@ class ChartsUI(BaseUIComponent):
             category_values = category_values.reindex(ordered_categories)
             
             if category_values.empty:
-                self._show_no_data_message("Nessun valore da visualizzare")
+                if ax is None:
+                    self._show_no_data_message("Nessun valore da visualizzare")
                 return
-            
+
             # Crea il grafico
-            fig, ax = plt.subplots(figsize=(10, 8))
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(10, 8))
+                external_ax = False
+            else:
+                fig = ax.figure
+                external_ax = True
             
             # Colori personalizzati
             colors = plt.cm.Set3(np.linspace(0, 1, len(category_values)))
@@ -335,26 +346,41 @@ class ChartsUI(BaseUIComponent):
             # Aggiungi legenda con percentuali, nomi e valori
             legend_labels = [f"{percentages[cat]:.2f}% - {cat}: €{val:,.0f}" 
                            for cat, val in category_values.items()]
-            ax.legend(wedges, legend_labels, title="Categorie", 
+            ax.legend(wedges, legend_labels, title="Categorie",
                      loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1))
-            
-            self._display_chart(fig)
+
+            # Mostra il grafico solo se non è un asse esterno
+            if not external_ax:
+                self._display_chart(fig)
+            else:
+                fig.canvas.draw_idle()
             
         except Exception as e:
             self._show_error_message(f"Errore nel grafico distribuzione valore: {e}")
     
-    def _create_risk_distribution_chart(self, df: pd.DataFrame):
-        """Crea grafico a barre della distribuzione del rischio"""
+    def _create_risk_distribution_chart(self, df: pd.DataFrame, ax=None):
+        """Crea grafico a barre della distribuzione del rischio
+
+        Args:
+            df: DataFrame con i dati del portfolio
+            ax: Asse matplotlib opzionale. Se None, crea una nuova figura.
+        """
         try:
             # Conta gli asset per livello di rischio
             risk_counts = df['risk_level'].value_counts().sort_index()
             
             if risk_counts.empty:
-                self._show_no_data_message("Nessun dato di rischio da visualizzare")
+                if ax is None:
+                    self._show_no_data_message("Nessun dato di rischio da visualizzare")
                 return
-            
+
             # Crea il grafico
-            fig, ax = plt.subplots(figsize=(10, 6))
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                external_ax = False
+            else:
+                fig = ax.figure
+                external_ax = True
             
             # Colori dal verde (basso rischio) al rosso (alto rischio)
             colors = ['#16a34a', '#84cc16', '#eab308', '#f97316', '#dc2626']
@@ -377,15 +403,25 @@ class ChartsUI(BaseUIComponent):
             # Imposta i tick dell'asse x
             ax.set_xticks(risk_counts.index)
             ax.set_xticklabels([f"Livello {int(x)}" for x in risk_counts.index])
-            
+
             plt.tight_layout()
-            self._display_chart(fig)
-            
+
+            # Mostra il grafico solo se non è un asse esterno
+            if not external_ax:
+                self._display_chart(fig)
+            else:
+                fig.canvas.draw_idle()
+
         except Exception as e:
             self._show_error_message(f"Errore nel grafico distribuzione rischio: {e}")
     
-    def _create_performance_chart(self, df: pd.DataFrame):
-        """Crea grafico a barre delle performance per categoria"""
+    def _create_performance_chart(self, df: pd.DataFrame, ax=None):
+        """Crea grafico a barre delle performance per categoria
+
+        Args:
+            df: DataFrame con i dati del portfolio
+            ax: Asse matplotlib opzionale. Se None, crea una nuova figura.
+        """
         try:
             # Calcola le performance (differenza tra updated e created)
             df['created_value'] = df['created_total_value'].fillna(0)
@@ -437,8 +473,13 @@ class ChartsUI(BaseUIComponent):
         except Exception as e:
             self._show_error_message(f"Errore nel grafico performance: {e}")
     
-    def _create_temporal_chart(self, df: pd.DataFrame):
-        """Crea grafico dell'evoluzione del patrimonio nel tempo per categoria"""
+    def _create_temporal_chart(self, df: pd.DataFrame, ax=None):
+        """Crea grafico dell'evoluzione del patrimonio nel tempo per categoria
+
+        Args:
+            df: DataFrame con i dati del portfolio
+            ax: Asse matplotlib opzionale. Se None, crea una nuova figura.
+        """
         try:
             # Carica TUTTI i dati SENZA deduplicazione per mantenere la storia
             all_data = self.portfolio_manager.load_data()
@@ -659,10 +700,16 @@ class ChartsUI(BaseUIComponent):
             # Crea DataFrame per il grafico
             chart_data = pd.DataFrame(timeline_data).T
             chart_data = chart_data.fillna(0)
-            
-            # 4. CREAZIONE DEL GRAFICO - Dimensioni maggiori per il zoom
-            fig, ax = plt.subplots(figsize=(16, 10))
-            
+
+            # 4. CREAZIONE DEL GRAFICO
+            # Se ax è fornito dall'esterno, usalo; altrimenti crea nuova figura
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(16, 10))
+                external_ax = False
+            else:
+                fig = ax.figure
+                external_ax = True
+
             # Pulisci l'asse per evitare sovrapposizioni
             ax.clear()
             
@@ -778,8 +825,13 @@ class ChartsUI(BaseUIComponent):
             # Griglia e legenda
             ax.grid(True, alpha=0.3)
             ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            
-            self._display_chart(fig)
+
+            # Mostra il grafico solo se non è un asse esterno
+            if not external_ax:
+                self._display_chart(fig)
+            else:
+                # Se è un asse esterno, aggiorna solo la figura
+                fig.canvas.draw_idle()
 
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico temporale: {e}")
