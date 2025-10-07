@@ -50,7 +50,7 @@ class NavigationBar(BaseUIComponent):
         self.portfolio_selector = None
         self.current_portfolio_file = "portfolio_data.xlsx"
         self.nav_buttons = {}  # Dizionario per tracciare i bottoni di navigazione
-        self.current_page = "Portfolio"  # Pagina attiva corrente
+        self.current_page = "RoadMap"  # Pagina attiva corrente
         
     def create_navbar(self) -> ctk.CTkFrame:
         """Crea la barra di navigazione completa"""
@@ -143,14 +143,14 @@ class NavigationBar(BaseUIComponent):
         nav_buttons_frame.pack(side="right", padx=20, pady=7)
 
         nav_buttons = [
-            ("📊 Portfolio", "Portfolio"),
-            ("📝 Asset", "Asset"),
-            ("📈 Grafici", "Grafici"),
-            ("📄 Export", "Export")
+            ("RoadMap AssetMind", "RoadMap"),
+            ("Portfolio", "Portfolio"),
+            ("Asset", "Asset"),
+            ("Grafici", "Grafici"),
+            ("Export", "Export"),
         ]
-        
         for text, page in nav_buttons:
-            # Colore iniziale: attivo per Portfolio, inattivo per gli altri
+            # Colore iniziale: attivo per la pagina corrente, inattivo per le altre
             if page == self.current_page:
                 fg_color = UIConfig.COLORS['primary']
                 hover_color = UIConfig.COLORS['primary_hover']
@@ -177,6 +177,10 @@ class NavigationBar(BaseUIComponent):
         self.current_page = page
         self.update_active_button(page)
         self.trigger_callback('page_changed', page)
+    
+    def navigate_to(self, page: str) -> None:
+        """Naviga programmaticamente verso una pagina aggiornando lo stato della navbar."""
+        self._on_page_changed(page)
     
     def _on_portfolio_changed(self, selected_file: str):
         """Gestisce il cambio di portfolio"""

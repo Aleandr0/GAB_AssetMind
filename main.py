@@ -33,6 +33,7 @@ from ui_components import NavigationBar, PortfolioTable
 from asset_form import AssetForm
 from charts_ui import ChartsUI
 from export_ui import ExportUI
+from home_ui import RoadMapDashboard
 from logging_config import get_logger, set_debug_mode
 from security_validation import PathSecurityValidator, SecurityError
 
@@ -66,11 +67,12 @@ class GABAssetMind:
         self.path_validator = PathSecurityValidator()
         
         # Stato applicazione
-        self.current_page = "Portfolio"
+        self.current_page = "RoadMap"
         self.page_frames: Dict[str, ctk.CTkFrame] = {}
         self.active_filter_popup: Optional[tk.Toplevel] = None
         
         # Componenti UI specializzati
+        self.roadmap_dashboard: Optional[RoadMapDashboard] = None
         self.navbar: Optional[NavigationBar] = None
         self.portfolio_table: Optional[PortfolioTable] = None
         self.asset_form: Optional[AssetForm] = None
@@ -126,7 +128,7 @@ class GABAssetMind:
             self._refresh_portfolio_list()
             
             # Mostra pagina di default
-            self.show_page("Portfolio")
+            self.show_page("RoadMap")
             
         except Exception as e:
             error_msg = ErrorHandler.handle_ui_error(e, "setup interfaccia")
@@ -134,7 +136,7 @@ class GABAssetMind:
     
     def _create_page_frames(self):
         """Crea i frame per le diverse pagine"""
-        page_names = ["Portfolio", "Asset", "Grafici", "Export"]
+        page_names = ["RoadMap", "Portfolio", "Asset", "Grafici", "Export"]
         
         for page_name in page_names:
             frame = ctk.CTkFrame(self.main_container)
@@ -142,6 +144,14 @@ class GABAssetMind:
     
     def _setup_specialized_components(self):
         """Configura i componenti specializzati per ogni pagina"""
+        # Dashboard Component
+        self.roadmap_dashboard = RoadMapDashboard(
+            self.page_frames["RoadMap"],
+            self.portfolio_manager,
+            on_navigate=self._navigate_from_dashboard,
+        )
+        self.roadmap_dashboard.refresh()
+
         # Portfolio Table Component
         self.portfolio_table = PortfolioTable(self.page_frames["Portfolio"], self.portfolio_manager)
         self.portfolio_table.create_table()
@@ -184,6 +194,16 @@ class GABAssetMind:
         # Export UI callbacks
         self.export_ui.register_callback('export_completed', self._on_export_completed)
     
+    def _navigate_from_dashboard(self, page: str, chart_name: Optional[str] = None) -> None:
+        """Gestisce la navigazione richiesta dalla dashboard di apertura."""
+        if self.navbar:
+            self.navbar.navigate_to(page)
+        else:
+            self.show_page(page)
+
+        if page == "Grafici" and chart_name and self.charts_ui:
+            self.charts_ui.select_chart(chart_name)
+
     def _load_initial_data(self):
         """Carica i dati iniziali dell'applicazione"""
         safe_execute(
@@ -194,6 +214,10 @@ class GABAssetMind:
         safe_execute(
             self._update_navbar_values,
             error_handler=lambda e: print(f"Errore aggiornamento navbar iniziale: {e}")
+        )
+        safe_execute(
+            lambda: self._refresh_dashboard(self._last_filtered_df),
+            error_handler=lambda e: print(f"Errore aggiornamento dashboard iniziale: {e}")
         )
     
     def show_page(self, page_name: str):
@@ -213,7 +237,9 @@ class GABAssetMind:
                     self.navbar.update_active_button(page_name)
                 
                 # Refresh dei dati per pagine specifiche
-                if page_name == "Portfolio":
+                if page_name == "RoadMap":
+                    self._refresh_dashboard(self._last_filtered_df)
+                elif page_name == "Portfolio":
                     self._load_portfolio_data()
                 elif page_name == "Grafici":
                     self.charts_ui.refresh_charts()
@@ -269,6 +295,7 @@ class GABAssetMind:
             if self.export_ui and hasattr(self.export_ui, 'refresh_with_filtered_data'):
                 self.export_ui.refresh_with_filtered_data(df, self.filter_state)
             self._update_navbar_values()
+            self._refresh_dashboard(df)
             
         except Exception as e:
             error_msg = ErrorHandler.handle_data_error(e, "caricamento portfolio")
@@ -323,7 +350,21 @@ class GABAssetMind:
                 
         except Exception as e:
             self.logger.error(f"Errore aggiornamento valori navbar: {e}")
-    
+
+    def _refresh_dashboard(self, dataframe: Optional[pd.DataFrame] = None) -> None:
+        """Aggiorna i contenuti della dashboard se disponibile."""
+        if not self.roadmap_dashboard:
+            return
+        try:
+            summary = self.portfolio_manager.get_portfolio_summary() if self.portfolio_manager else {}
+            df_source = dataframe if dataframe is not None else self._last_filtered_df
+            if df_source is None and self.portfolio_manager:
+                df_source = self.portfolio_manager.get_current_assets_only()
+            self.roadmap_dashboard.refresh(summary, df_source)
+        except Exception as exc:
+            if self.logger:
+                self.logger.error(f"Errore aggiornamento dashboard: {exc}")
+
     def _refresh_portfolio_list(self):
         """Aggiorna la lista dei portfolio disponibili"""
         try:
@@ -378,6 +419,8 @@ class GABAssetMind:
                     self.charts_ui.portfolio_manager = self.portfolio_manager
                 if self.export_ui:
                     self.export_ui.portfolio_manager = self.portfolio_manager
+                if self.roadmap_dashboard:
+                    self.roadmap_dashboard.set_portfolio_manager(self.portfolio_manager)
                 
                 # Ricarica dati
                 self._load_portfolio_data()
@@ -408,6 +451,8 @@ class GABAssetMind:
                     new_portfolio_manager = PortfolioManager(str(safe_path))
                     self.current_portfolio_file = safe_path.name
                     self.portfolio_manager = new_portfolio_manager
+                    if self.roadmap_dashboard:
+                        self.roadmap_dashboard.set_portfolio_manager(self.portfolio_manager)
                 except SecurityError as e:
                     self.logger.error(f"Nome portfolio non sicuro: {e}")
                     messagebox.showerror("Errore Sicurezza", f"Nome portfolio non sicuro: {e}")
