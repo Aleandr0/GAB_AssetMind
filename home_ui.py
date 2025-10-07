@@ -120,16 +120,10 @@ class RoadMapDashboard:
             frame = ctk.CTkFrame(grid, corner_radius=16, fg_color="#ffffff")
             frame.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
             frame.grid_columnconfigure(0, weight=1)
-            frame.grid_rowconfigure(1, weight=1)
+            frame.grid_rowconfigure(0, weight=1)  # Modificato: riga 0 invece di 1
 
-            header_label = ctk.CTkLabel(
-                frame,
-                text=title,
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#0f172a",
-            )
-            header_label.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 6))
-            self._make_clickable(header_label, target_page, chart_name)
+            # Titolo rimosso per dare più spazio ai grafici
+            # (i titoli sono già presenti nei grafici stessi)
 
             if panel_type == "chart":
                 fig = Figure(figsize=(4.0, 2.5), dpi=100)
@@ -137,7 +131,7 @@ class RoadMapDashboard:
                 ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.35)
                 canvas = FigureCanvasTkAgg(fig, master=frame)
                 widget = canvas.get_tk_widget()
-                widget.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+                widget.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)  # Modificato: row=0 e padding simmetrico
                 self.chart_objects[key] = {"figure": fig, "axis": ax, "canvas": canvas}
                 self._make_clickable(frame, target_page, chart_name)
                 self._make_clickable(widget, target_page, chart_name)
@@ -146,7 +140,7 @@ class RoadMapDashboard:
 
     def _build_returns_table(self, frame: ctk.CTkFrame) -> None:
         table = ctk.CTkFrame(frame, fg_color="#f8fafc")
-        table.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        table.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)  # Modificato: row=0 e padding simmetrico
         table.grid_columnconfigure((0, 1, 2), weight=1)
         self._make_clickable(frame, "Portfolio")
         self._make_clickable(table, "Portfolio")
