@@ -245,7 +245,8 @@ class RoadMapDashboard:
 
         asset_count = 0
         if dataframe is not None and not dataframe.empty:
-            asset_count = len(dataframe)
+            # Conta asset unici, non le righe - usa get_current_assets_only per deduplica
+            asset_count = len(self.portfolio_manager.get_current_assets_only())
         assets_label = self.summary_labels.get("assets")
         if assets_label:
             assets_label.configure(text=str(asset_count))
