@@ -344,7 +344,9 @@ class GABAssetMind:
                 try:
                     total_records_count = len(self.portfolio_manager.load_data())
                     current_assets_count = len(self.portfolio_manager.get_current_assets_only())
-                except Exception:
+                    self.logger.debug(f"Navbar contatori: Records={total_records_count}, Assets={current_assets_count}")
+                except Exception as e:
+                    self.logger.error(f"Errore calcolo contatori: {e}")
                     total_records_count = 0
                     current_assets_count = 0
                 self.navbar.update_counts(total_records_count, current_assets_count)
