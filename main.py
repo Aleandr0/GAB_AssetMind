@@ -345,7 +345,13 @@ class GABAssetMind:
                 # Aggiorna contatori semplici: usa i valori dai pulsanti Portfolio (fonte di verità)
                 if self.portfolio_table:
                     total_records_count, current_assets_count = self.portfolio_table.get_counts()
-                    self.logger.debug(f"Navbar contatori (da Portfolio buttons): Records={total_records_count}, Assets={current_assets_count}")
+                    # Fallback se i valori non sono ancora stati calcolati
+                    if total_records_count == 0 and current_assets_count == 0:
+                        total_records_count = len(self.portfolio_manager.load_data())
+                        current_assets_count = len(self.portfolio_manager.get_current_assets_only())
+                        self.logger.debug(f"Navbar contatori (fallback diretto): Records={total_records_count}, Assets={current_assets_count}")
+                    else:
+                        self.logger.debug(f"Navbar contatori (da Portfolio buttons): Records={total_records_count}, Assets={current_assets_count}")
                 else:
                     total_records_count = 0
                     current_assets_count = 0
