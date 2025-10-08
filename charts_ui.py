@@ -798,9 +798,9 @@ class ChartsUI(BaseUIComponent):
             self.logger.debug(f"  - Linee totali nel grafico: {lines_added}")
             
             # 5. FORMATTAZIONE DEL GRAFICO
-            ax.set_title('Evoluzione Patrimonio per Categoria', fontsize=16, fontweight='bold', pad=20)
+            ax.set_title('Evoluzione Asset', fontsize=16, fontweight='bold', pad=20)
             ax.set_xlabel('Anno', fontsize=12)
-            ax.set_ylabel('Valore (€)', fontsize=12)
+            ax.set_ylabel('Valore (M€)', fontsize=12)
             
             # Seleziona solo primo, ultimo e anni pari per evitare sovrapposizioni
             years = sorted(set([d.year for d in dates]))
@@ -823,16 +823,17 @@ class ChartsUI(BaseUIComponent):
                 # Ordina gli anni da mostrare
                 display_years = sorted(set(display_years))
                 
-                # Crea i tick e le etichette
+                # Crea i tick e le etichette con anni a 2 cifre
                 year_dates = [pd.Timestamp(f'{year}-01-01') for year in display_years]
+                year_labels = [str(year)[-2:] for year in display_years]  # Ultime 2 cifre
                 ax.set_xticks(year_dates)
-                ax.set_xticklabels(display_years)
+                ax.set_xticklabels(year_labels)
                 
                 # Assicurati che tutti i tick siano visibili
                 ax.tick_params(axis='x', rotation=0)
             
-            # Formattazione asse Y con valuta
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'€{x:,.0f}'))
+            # Formattazione asse Y in milioni di euro con 1 decimale
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1_000_000:.1f}'))
             
             # Griglia e legenda
             ax.grid(True, alpha=0.3)
