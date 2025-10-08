@@ -1145,11 +1145,22 @@ class PortfolioTable(BaseUIComponent):
         try:
             total_records = len(self.portfolio_manager.load_data())
             current_assets = len(self.portfolio_manager.get_current_assets_only())
-            
+
+            # Salva i valori per uso esterno
+            self._last_total_records = total_records
+            self._last_current_assets = current_assets
+
             safe_execute(lambda: self.records_btn.configure(text=f"Record {total_records}"))
             safe_execute(lambda: self.assets_btn.configure(text=f"Asset {current_assets}"))
         except Exception as e:
             self.logger.error(f"Errore aggiornamento contatori: {e}")
+
+    def get_counts(self) -> tuple[int, int]:
+        """Restituisce i contatori correnti (total_records, current_assets)"""
+        return (
+            getattr(self, '_last_total_records', 0),
+            getattr(self, '_last_current_assets', 0)
+        )
     
     def get_visible_value(self) -> tuple[float, int]:
         """

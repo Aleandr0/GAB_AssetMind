@@ -342,13 +342,11 @@ class GABAssetMind:
                 if visible_value == total_value or percentage >= 99.9:
                     percentage = 100.0
                 self.navbar.update_values(total_value, visible_value, percentage)
-                # Aggiorna contatori semplici: Record Totali e Asset Correnti
-                try:
-                    total_records_count = len(self.portfolio_manager.load_data())
-                    current_assets_count = len(self.portfolio_manager.get_current_assets_only())
-                    self.logger.debug(f"Navbar contatori: Records={total_records_count}, Assets={current_assets_count}")
-                except Exception as e:
-                    self.logger.error(f"Errore calcolo contatori: {e}")
+                # Aggiorna contatori semplici: usa i valori dai pulsanti Portfolio (fonte di verità)
+                if self.portfolio_table:
+                    total_records_count, current_assets_count = self.portfolio_table.get_counts()
+                    self.logger.debug(f"Navbar contatori (da Portfolio buttons): Records={total_records_count}, Assets={current_assets_count}")
+                else:
                     total_records_count = 0
                     current_assets_count = 0
                 self.navbar.update_counts(total_records_count, current_assets_count)
