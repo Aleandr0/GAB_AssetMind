@@ -48,25 +48,19 @@ class RoadMapDashboard:
 
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self.container, corner_radius=18, fg_color="#e9efff")
-        header.grid(row=0, column=0, sticky="nsew", pady=(10, 12))
+        header.grid(row=0, column=0, sticky="nsew", pady=(6, 8))
         header.grid_columnconfigure(0, weight=3)
         header.grid_columnconfigure((1, 2, 3), weight=1)
 
         title = ctk.CTkLabel(
             header,
             text="RoadMap AssetMind",
-            font=ctk.CTkFont(size=24, weight="bold"),
+            font=ctk.CTkFont(size=16, weight="bold"),
             text_color="#0f172a",
         )
-        title.grid(row=0, column=0, sticky="w", padx=24, pady=(16, 4))
+        title.grid(row=0, column=0, sticky="w", padx=16, pady=8)
 
-        subtitle = ctk.CTkLabel(
-            header,
-            text="Visibilita immediata del patrimonio e accesso rapido alle analisi",
-            font=ctk.CTkFont(size=14),
-            text_color="#1e293b",
-        )
-        subtitle.grid(row=1, column=0, columnspan=4, sticky="w", padx=24, pady=(0, 12))
+        # Subtitle rimosso per compattare l'header
 
         metrics = [
             ("total", "Valore complessivo"),
@@ -76,24 +70,24 @@ class RoadMapDashboard:
 
         for col, (key, label_text) in enumerate(metrics, start=1):
             wrapper = ctk.CTkFrame(header, corner_radius=12, fg_color="#ffffff")
-            wrapper.grid(row=0, column=col, rowspan=1, sticky="nsew", padx=(8 if col > 1 else 16), pady=(14, 16))
+            wrapper.grid(row=0, column=col, rowspan=1, sticky="nsew", padx=(8 if col > 1 else 12), pady=8)
             wrapper.grid_columnconfigure(0, weight=1)
 
             label = ctk.CTkLabel(
                 wrapper,
                 text=label_text,
-                font=ctk.CTkFont(size=12, weight="bold"),
+                font=ctk.CTkFont(size=11, weight="bold"),
                 text_color="#475569",
             )
-            label.grid(row=0, column=0, sticky="w", padx=16, pady=(10, 0))
+            label.grid(row=0, column=0, sticky="w", padx=12, pady=(6, 0))
 
             value_label = ctk.CTkLabel(
                 wrapper,
                 text="-",
-                font=ctk.CTkFont(size=18, weight="bold"),
+                font=ctk.CTkFont(size=16, weight="bold"),
                 text_color="#1d4ed8",
             )
-            value_label.grid(row=1, column=0, sticky="w", padx=16, pady=(4, 12))
+            value_label.grid(row=1, column=0, sticky="w", padx=12, pady=(2, 6))
             self._make_clickable(wrapper, "Portfolio", None)
             self._make_clickable(label, "Portfolio", None)
             self._make_clickable(value_label, "Portfolio", None)
