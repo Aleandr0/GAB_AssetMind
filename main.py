@@ -240,6 +240,8 @@ class GABAssetMind:
                 # Refresh dei dati per pagine specifiche
                 if page_name == "RoadMap":
                     self._refresh_dashboard(self._last_filtered_df)
+                    # Aggiorna sempre i contatori navbar quando torni alla RoadMap
+                    self._update_navbar_values()
                 elif page_name == "Portfolio":
                     self._load_portfolio_data()
                 elif page_name == "Grafici":
