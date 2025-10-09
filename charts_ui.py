@@ -1130,17 +1130,18 @@ class ChartsUI(BaseUIComponent):
             safe_execute(lambda: self.current_chart.get_tk_widget().destroy())
         plt.close('all')
 
-    def _format_filter_summary(self) -> Optional[str]:
+    def _format_filter_summary(self) -> str:
         """Crea una stringa leggibile con i filtri attivi.
         Formato: Campo: valore1, valore2, valore3
-        Ogni filtro su una riga separata."""
+        Ogni filtro su una riga separata.
+        Ritorna "Patrimonio Complessivo" se non ci sono filtri."""
         try:
             info = self._filter_info or {}
             col_filters = info.get('column_filters') or {}
 
-            # Nessun filtro attivo - non mostrare nulla
+            # Nessun filtro attivo - mostra "Patrimonio Complessivo"
             if not col_filters:
-                return None
+                return "Patrimonio Complessivo"
 
             from config import FieldMapping
             lines = []
@@ -1153,7 +1154,7 @@ class ChartsUI(BaseUIComponent):
 
             return '\n'.join(lines)
         except Exception:
-            return None
+            return "Patrimonio Complessivo"
 
     def _update_filter_label(self):
         """Aggiorna la label dei filtri nei controlli."""
@@ -1161,10 +1162,7 @@ class ChartsUI(BaseUIComponent):
             return
 
         summary = self._format_filter_summary()
-        if summary:
-            self.filter_label.configure(text=summary)
-        else:
-            self.filter_label.configure(text="")
+        self.filter_label.configure(text=summary)
 
     def select_chart(self, chart_name: str):
         """Seleziona e visualizza un grafico specifico

@@ -249,14 +249,15 @@ class ExportUI(BaseUIComponent):
     def _format_filter_summary(self) -> str:
         """Ritorna una stringa riassuntiva dei filtri attivi.
         Formato: Campo: valore1, valore2, valore3
-        Ogni filtro su una riga separata."""
+        Ogni filtro su una riga separata.
+        Ritorna "Patrimonio Complessivo" se non ci sono filtri."""
         try:
             info = self._filter_info or {}
             col_filters = info.get('column_filters') or {}
 
-            # Nessun filtro attivo - non mostrare nulla
+            # Nessun filtro attivo - mostra "Patrimonio Complessivo"
             if not col_filters:
-                return ''
+                return 'Patrimonio Complessivo'
 
             from config import FieldMapping
             lines = []
@@ -269,7 +270,7 @@ class ExportUI(BaseUIComponent):
 
             return '\n'.join(lines)
         except Exception:
-            return ''
+            return 'Patrimonio Complessivo'
 
     def _add_filter_banner(self, parent):
         """Mostra un'etichetta con i filtri attivi se presenti."""

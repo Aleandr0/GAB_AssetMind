@@ -296,11 +296,7 @@ class RoadMapDashboard:
         for col, values in col_filters.items():
             disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
             vals = list(sorted({str(v) for v in values}))
-            # Mostra solo i primi 2 valori se sono troppi
-            if len(vals) > 2:
-                shown = f"{vals[0]}, {vals[1]}... (+{len(vals)-2})"
-            else:
-                shown = ', '.join(vals)
+            shown = ', '.join(vals)  # Mostra tutti i valori come in Grafici/Export
             parts.append(f"{disp}: {shown}")
 
         if parts:
