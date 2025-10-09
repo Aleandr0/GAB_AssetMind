@@ -52,15 +52,26 @@ class RoadMapDashboard:
         header.grid_columnconfigure(0, weight=3)
         header.grid_columnconfigure((1, 2, 3), weight=1)
 
+        # Container per titolo e filtri sulla stessa riga
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.grid(row=0, column=0, sticky="w", padx=16, pady=8)
+
         title = ctk.CTkLabel(
-            header,
+            title_frame,
             text="RoadMap AssetMind",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color="#0f172a",
         )
-        title.grid(row=0, column=0, sticky="w", padx=16, pady=8)
+        title.pack(side="left")
 
-        # Subtitle rimosso per compattare l'header
+        # Label per mostrare selezione attiva o "Patrimonio Complessivo"
+        self.filter_label = ctk.CTkLabel(
+            title_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color="#64748b",
+        )
+        self.filter_label.pack(side="left", padx=(12, 0))
 
         metrics = [
             ("total", "Valore complessivo"),
@@ -184,6 +195,7 @@ class RoadMapDashboard:
         self,
         summary: Optional[Dict[str, Any]] = None,
         dataframe: Optional[pd.DataFrame] = None,
+        filter_state: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not self.portfolio_manager:
             return
@@ -200,7 +212,7 @@ class RoadMapDashboard:
             except Exception:
                 dataframe = None
 
-        self._update_header(summary, dataframe)
+        self._update_header(summary, dataframe, filter_state)
         self._render_timeline(dataframe)
         self._render_value_distribution(dataframe)
         self._render_risk_distribution(dataframe)
@@ -231,6 +243,7 @@ class RoadMapDashboard:
         self,
         summary: Dict[str, Any],
         dataframe: Optional[pd.DataFrame],
+        filter_state: Optional[Dict[str, Any]] = None,
     ) -> None:
         total_value = summary.get("total_value", 0)
         total_label = self.summary_labels.get("total")
@@ -261,6 +274,39 @@ class RoadMapDashboard:
         updated_label = self.summary_labels.get("updated")
         if updated_label:
             updated_label.configure(text=last_update)
+
+        # Aggiorna label filtri/selezione
+        self._update_filter_label(filter_state)
+
+    def _update_filter_label(self, filter_state: Optional[Dict[str, Any]] = None) -> None:
+        """Aggiorna la label che mostra la selezione attiva"""
+        if not hasattr(self, 'filter_label') or not self.filter_label:
+            return
+
+        # Se non ci sono filtri, mostra "Patrimonio Complessivo"
+        if not filter_state or not filter_state.get('column_filters'):
+            self.filter_label.configure(text="- Patrimonio Complessivo")
+            return
+
+        # Altrimenti formatta i filtri attivi
+        from config import FieldMapping
+        col_filters = filter_state.get('column_filters', {})
+
+        parts = []
+        for col, values in col_filters.items():
+            disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
+            vals = list(sorted({str(v) for v in values}))
+            # Mostra solo i primi 2 valori se sono troppi
+            if len(vals) > 2:
+                shown = f"{vals[0]}, {vals[1]}... (+{len(vals)-2})"
+            else:
+                shown = ', '.join(vals)
+            parts.append(f"{disp}: {shown}")
+
+        if parts:
+            self.filter_label.configure(text="- " + " | ".join(parts))
+        else:
+            self.filter_label.configure(text="- Patrimonio Complessivo")
 
     # ------------------------------------------------------------------
     # Rendering grafici

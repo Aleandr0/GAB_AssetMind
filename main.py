@@ -369,7 +369,8 @@ class GABAssetMind:
             df_source = dataframe if dataframe is not None else self._last_filtered_df
             if df_source is None and self.portfolio_manager:
                 df_source = self.portfolio_manager.get_current_assets_only()
-            self.roadmap_dashboard.refresh(summary, df_source)
+            # Passa anche il filter_state per mostrare la selezione attiva
+            self.roadmap_dashboard.refresh(summary, df_source, self.filter_state)
         except Exception as exc:
             if self.logger:
                 self.logger.error(f"Errore aggiornamento dashboard: {exc}")

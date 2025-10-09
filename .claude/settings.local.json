@@ -7,7 +7,8 @@
       "Bash(timeout:*)",
       "Bash(dir)",
       "Bash(git commit:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(Rischio: 3\")\n- Compact format: shows first 2 values, then \"+N\" if more\n\nMatches behavior of Grafici and Export screens for consistency.\n\nChanges:\n- Added filter_label to RoadMap header\n- Pass filter_state from main.py to RoadMap.refresh()\n- Format filters in _update_filter_label() method\n- Uses FieldMapping for display names\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
