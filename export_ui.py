@@ -875,6 +875,7 @@ class ExportUI(BaseUIComponent):
                 # Dettaglio Asset: tabella impaginata (tutti gli asset selezionati) - A3 Landscape
                 try:
                     from config import FieldMapping
+                    import textwrap
 
                     # Colonne fedeli alla tabella Portfolio (stesso ordine)
                     detail_cols_pref = ['id', 'category', 'position', 'asset_name', 'isin', 'ticker', 'risk_level',
@@ -884,75 +885,106 @@ class ExportUI(BaseUIComponent):
                     detail_cols = [c for c in detail_cols_pref if c in df.columns]
                     detail_df = df[detail_cols].copy()
 
-                    # Helper per word wrap
-                    def wrap_text(text, max_len=30):
-                        """Spezza testo lungo su più righe"""
-                        if pd.isna(text) or text == '':
-                            return ''
-                        text = str(text)
-                        if len(text) <= max_len:
-                            return text
-                        # Spezza ogni max_len caratteri
-                        lines = []
-                        for i in range(0, len(text), max_len):
-                            lines.append(text[i:i+max_len])
-                        return '\n'.join(lines)
-
-                    # Formattazioni base
+                    # Formattazioni base (NO wrap qui, lo facciamo dopo nella cella)
                     for col in detail_df.columns:
                         if col in ['created_total_value', 'updated_total_value']:
-                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.2f}" if pd.notna(x) else '')
+                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.0f}" if pd.notna(x) else '')
                         elif col in ['created_amount', 'updated_amount']:
-                            detail_df[col] = detail_df[col].map(lambda x: f"{x:,.4f}" if pd.notna(x) else '')
+                            detail_df[col] = detail_df[col].map(lambda x: f"{x:,.2f}" if pd.notna(x) else '')
                         elif col in ['created_unit_price', 'updated_unit_price', 'accumulation_amount', 'income_per_year', 'rental_income']:
-                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.2f}" if pd.notna(x) else '')
+                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.0f}" if pd.notna(x) else '')
                         elif col in ['created_at', 'updated_at']:
                             detail_df[col] = detail_df[col].map(lambda x: str(x)[:10] if pd.notna(x) else '')
-                        elif col == 'asset_name':
-                            detail_df[col] = detail_df[col].map(lambda x: wrap_text(x, 40))
-                        elif col == 'note':
-                            detail_df[col] = detail_df[col].map(lambda x: wrap_text(x, 50))
                         else:
                             detail_df[col] = detail_df[col].map(lambda x: str(x) if pd.notna(x) else '')
 
                     # Headers con nomi display
                     col_labels = [FieldMapping.DB_TO_DISPLAY.get(c, c.replace('_', ' ').title()) for c in detail_df.columns]
 
-                    rows_per_page = 22  # Meno righe per A3 landscape per lasciare spazio al word wrap
+                    # Larghezze colonne ottimizzate (proporzioni relative)
+                    col_widths = {
+                        'id': 0.4,
+                        'category': 0.8,
+                        'position': 0.8,
+                        'asset_name': 2.5,  # Molto spazio
+                        'isin': 1.0,
+                        'ticker': 0.6,
+                        'risk_level': 0.4,
+                        'created_at': 0.7,
+                        'created_amount': 0.7,
+                        'created_unit_price': 0.7,
+                        'created_total_value': 0.8,
+                        'updated_at': 0.7,
+                        'updated_amount': 0.7,
+                        'updated_unit_price': 0.7,
+                        'updated_total_value': 0.8,
+                        'accumulation_plan': 0.5,
+                        'accumulation_amount': 0.7,
+                        'income_per_year': 0.7,
+                        'rental_income': 0.7,
+                        'note': 2.0  # Molto spazio
+                    }
+                    widths = [col_widths.get(c, 0.8) for c in detail_df.columns]
+
+                    rows_per_page = 22
                     total_rows = len(detail_df)
                     for start in range(0, total_rows, rows_per_page):
                         chunk = detail_df.iloc[start:start+rows_per_page]
 
-                        # A3 Landscape: 16.54 x 11.69 inches
-                        fig, ax = plt.subplots(figsize=(16.54, 11.69))
+                        # A3 Landscape con margini ridotti (0.5 cm)
+                        fig = plt.figure(figsize=(16.54, 11.69))
+                        # Margini: 0.5cm = ~0.197 inches, usiamo valori normalizzati
+                        ax = fig.add_axes([0.012, 0.05, 0.976, 0.90])
                         ax.axis('off')
-                        ax.set_title("Dettaglio Asset (selezione)", fontsize=14, fontweight='bold', pad=20)
+                        ax.set_title("Dettaglio Asset (selezione)", fontsize=14, fontweight='bold', pad=10, loc='left')
 
                         tbl = ax.table(cellText=chunk.values,
                                        colLabels=col_labels,
+                                       colWidths=widths,
                                        loc='center',
-                                       cellLoc='left')  # Allineamento a sinistra per leggibilità
+                                       cellLoc='left')
                         tbl.auto_set_font_size(False)
-                        tbl.set_fontsize(6)  # Font più piccolo per più colonne
-                        tbl.scale(1, 1.8)  # Più altezza per il word wrap
+                        tbl.set_fontsize(5.5)
+                        tbl.scale(1, 2.2)  # Più altezza per word wrap
 
-                        # Stile header
+                        # Stile e word wrap
                         for (i, j), cell in tbl.get_celld().items():
                             if i == 0:  # Header
                                 cell.set_facecolor('#4472C4')
-                                cell.set_text_props(weight='bold', color='white')
+                                cell.set_text_props(weight='bold', color='white', fontsize=5.5)
+                                cell.set_height(0.04)
                             else:
+                                # Alterna colori
                                 if i % 2 == 0:
                                     cell.set_facecolor('#F2F2F2')
                                 else:
                                     cell.set_facecolor('white')
 
+                                # Word wrap per colonne lunghe
+                                text = cell.get_text().get_text()
+                                col_name = detail_df.columns[j]
+
+                                if col_name == 'asset_name' and len(text) > 35:
+                                    wrapped = textwrap.fill(text, width=35, break_long_words=False)
+                                    cell.get_text().set_text(wrapped)
+                                elif col_name == 'note' and len(text) > 40:
+                                    wrapped = textwrap.fill(text, width=40, break_long_words=False)
+                                    cell.get_text().set_text(wrapped)
+                                elif col_name in ['position', 'isin'] and len(text) > 20:
+                                    wrapped = textwrap.fill(text, width=20, break_long_words=False)
+                                    cell.get_text().set_text(wrapped)
+
+                                cell.set_text_props(fontsize=5.5)
+                                cell.set_height(0.045)
+
                         _pdf_header_footer(fig, page_num)
-                        pdf.savefig(fig, dpi=150)  # DPI più alta per leggibilità
+                        pdf.savefig(fig, dpi=150, bbox_inches='tight', pad_inches=0.1)
                         plt.close(fig)
                         page_num += 1
                 except Exception as e:
                     self.logger.error(f"Errore generazione tabella dettaglio: {e}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
                     pass
 
             messagebox.showinfo("Report PDF", f"Report generato: {os.path.basename(str(validated_path))}")
