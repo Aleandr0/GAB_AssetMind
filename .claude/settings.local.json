@@ -3,12 +3,7 @@
     "allow": [
       "Bash(python:*)",
       "Bash(git add:*)",
-      "Bash(git push:*)",
-      "Bash(timeout:*)",
-      "Bash(dir)",
-      "Bash(git commit:*)",
-      "Bash(git checkout:*)",
-      "Bash(Rischio: 3\")\n- Compact format: shows first 2 values, then \"+N\" if more\n\nMatches behavior of Grafici and Export screens for consistency.\n\nChanges:\n- Added filter_label to RoadMap header\n- Pass filter_state from main.py to RoadMap.refresh()\n- Format filters in _update_filter_label() method\n- Uses FieldMapping for display names\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nImprove PDF export with A3 landscape table and Portfolio column alignment\n\n- Changed detail asset table from A4 to A3 landscape (16.54 x 11.69 inches)\n- Match table columns exactly with Portfolio table in same order\n- Add all Portfolio fields: id, category, position, asset_name, isin, ticker, risk_level, dates, amounts, prices, accumulation, income, note\n- Implement word wrap for long text fields (asset_name: 40 chars, note: 50 chars)\n- Improve table formatting: left-aligned text, alternating row colors, blue header\n- Increase DPI to 150 for better readability\n- Reduce rows per page to 22 to accommodate wrapped text\n- Use FieldMapping for proper column headers\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

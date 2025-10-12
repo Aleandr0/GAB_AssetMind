@@ -872,43 +872,87 @@ class ExportUI(BaseUIComponent):
                 except Exception:
                     pass
 
-                # Dettaglio Asset: tabella impaginata (tutti gli asset selezionati)
+                # Dettaglio Asset: tabella impaginata (tutti gli asset selezionati) - A3 Landscape
                 try:
-                    detail_cols_pref = ['id', 'category', 'position', 'asset_name', 'isin',
-                                        'created_at', 'updated_at', 'created_amount', 'updated_amount',
-                                        'created_unit_price', 'updated_unit_price', 'current_value']
+                    from config import FieldMapping
+
+                    # Colonne fedeli alla tabella Portfolio (stesso ordine)
+                    detail_cols_pref = ['id', 'category', 'position', 'asset_name', 'isin', 'ticker', 'risk_level',
+                                        'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
+                                        'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
+                                        'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note']
                     detail_cols = [c for c in detail_cols_pref if c in df.columns]
                     detail_df = df[detail_cols].copy()
 
-                    # Formattazioni base
-                    if 'current_value' in detail_df.columns:
-                        detail_df['current_value'] = detail_df['current_value'].map(lambda x: f"€{x:,.2f}")
-                    if 'created_amount' in detail_df.columns:
-                        detail_df['created_amount'] = detail_df['created_amount'].map(lambda x: f"{x:,.4f}")
-                    if 'updated_amount' in detail_df.columns:
-                        detail_df['updated_amount'] = detail_df['updated_amount'].map(lambda x: f"{x:,.4f}")
-                    for col in ['created_unit_price','updated_unit_price']:
-                        if col in detail_df.columns:
-                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.4f}")
+                    # Helper per word wrap
+                    def wrap_text(text, max_len=30):
+                        """Spezza testo lungo su più righe"""
+                        if pd.isna(text) or text == '':
+                            return ''
+                        text = str(text)
+                        if len(text) <= max_len:
+                            return text
+                        # Spezza ogni max_len caratteri
+                        lines = []
+                        for i in range(0, len(text), max_len):
+                            lines.append(text[i:i+max_len])
+                        return '\n'.join(lines)
 
-                    rows_per_page = 28
+                    # Formattazioni base
+                    for col in detail_df.columns:
+                        if col in ['created_total_value', 'updated_total_value']:
+                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.2f}" if pd.notna(x) else '')
+                        elif col in ['created_amount', 'updated_amount']:
+                            detail_df[col] = detail_df[col].map(lambda x: f"{x:,.4f}" if pd.notna(x) else '')
+                        elif col in ['created_unit_price', 'updated_unit_price', 'accumulation_amount', 'income_per_year', 'rental_income']:
+                            detail_df[col] = detail_df[col].map(lambda x: f"€{x:,.2f}" if pd.notna(x) else '')
+                        elif col in ['created_at', 'updated_at']:
+                            detail_df[col] = detail_df[col].map(lambda x: str(x)[:10] if pd.notna(x) else '')
+                        elif col == 'asset_name':
+                            detail_df[col] = detail_df[col].map(lambda x: wrap_text(x, 40))
+                        elif col == 'note':
+                            detail_df[col] = detail_df[col].map(lambda x: wrap_text(x, 50))
+                        else:
+                            detail_df[col] = detail_df[col].map(lambda x: str(x) if pd.notna(x) else '')
+
+                    # Headers con nomi display
+                    col_labels = [FieldMapping.DB_TO_DISPLAY.get(c, c.replace('_', ' ').title()) for c in detail_df.columns]
+
+                    rows_per_page = 22  # Meno righe per A3 landscape per lasciare spazio al word wrap
                     total_rows = len(detail_df)
                     for start in range(0, total_rows, rows_per_page):
                         chunk = detail_df.iloc[start:start+rows_per_page]
-                        fig, ax = plt.subplots(figsize=(11.69, 8.27))
+
+                        # A3 Landscape: 16.54 x 11.69 inches
+                        fig, ax = plt.subplots(figsize=(16.54, 11.69))
                         ax.axis('off')
                         ax.set_title("Dettaglio Asset (selezione)", fontsize=14, fontweight='bold', pad=20)
+
                         tbl = ax.table(cellText=chunk.values,
-                                       colLabels=[str(c).title().replace('_',' ') for c in chunk.columns],
-                                       loc='center')
+                                       colLabels=col_labels,
+                                       loc='center',
+                                       cellLoc='left')  # Allineamento a sinistra per leggibilità
                         tbl.auto_set_font_size(False)
-                        tbl.set_fontsize(7)
-                        tbl.scale(1, 1.2)
+                        tbl.set_fontsize(6)  # Font più piccolo per più colonne
+                        tbl.scale(1, 1.8)  # Più altezza per il word wrap
+
+                        # Stile header
+                        for (i, j), cell in tbl.get_celld().items():
+                            if i == 0:  # Header
+                                cell.set_facecolor('#4472C4')
+                                cell.set_text_props(weight='bold', color='white')
+                            else:
+                                if i % 2 == 0:
+                                    cell.set_facecolor('#F2F2F2')
+                                else:
+                                    cell.set_facecolor('white')
+
                         _pdf_header_footer(fig, page_num)
-                        pdf.savefig(fig)
+                        pdf.savefig(fig, dpi=150)  # DPI più alta per leggibilità
                         plt.close(fig)
                         page_num += 1
-                except Exception:
+                except Exception as e:
+                    self.logger.error(f"Errore generazione tabella dettaglio: {e}")
                     pass
 
             messagebox.showinfo("Report PDF", f"Report generato: {os.path.basename(str(validated_path))}")

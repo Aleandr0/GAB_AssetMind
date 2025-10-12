@@ -277,22 +277,13 @@ class ChartsUI(BaseUIComponent):
             # Calcola i valori per categoria usando la stessa logica del Portfolio Summary
             df['current_value'] = df['updated_total_value'].fillna(df['created_total_value']).fillna(0)
             category_values = df.groupby('category')['current_value'].sum()
-            
+
             # Filtra categorie con valore > 0
             category_values = category_values[category_values > 0]
-            
-            # Ordina le categorie secondo l'ordine specificato
-            category_order = ['Immobiliare', 'Titoli di stato', 'Fondi di investimento', 'Liquidità', 'Criptovalute', 'ETF', 'PAC']
-            
-            # Riordina mantenendo solo le categorie presenti nei dati
-            ordered_categories = [cat for cat in category_order if cat in category_values.index]
-            # Aggiungi eventuali categorie non nell'ordine specificato
-            for cat in category_values.index:
-                if cat not in ordered_categories:
-                    ordered_categories.append(cat)
-            
-            category_values = category_values.reindex(ordered_categories)
-            
+
+            # Ordina per valore decrescente
+            category_values = category_values.sort_values(ascending=False)
+
             if category_values.empty:
                 if ax is None:
                     self._show_no_data_message("Nessun valore da visualizzare")
@@ -305,50 +296,109 @@ class ChartsUI(BaseUIComponent):
             else:
                 fig = ax.figure
                 external_ax = True
+                # Pulisci l'asse per rimuovere i testi precedenti
+                ax.clear()
             
             # Colori personalizzati
             colors = plt.cm.Set3(np.linspace(0, 1, len(category_values)))
-            
-            # Calcola le percentuali per la legenda
+
+            # Calcola le percentuali
             total_value = category_values.sum()
             percentages = (category_values / total_value * 100).round(2)
-            
-            wedges, texts, autotexts = ax.pie(
-                category_values.values,
-                labels=category_values.index,
-                autopct='%1.2f%%',
-                colors=colors,
-                startangle=90,
-                textprops={'fontsize': 10},
-                pctdistance=0.7  # Posiziona le percentuali più vicino al centro
-            )
-            
-            # Migliora l'aspetto del testo e sfasa le percentuali lungo il raggio
-            for i, (autotext, wedge) in enumerate(zip(autotexts, wedges)):
-                autotext.set_color('black')
-                autotext.set_weight('bold')
-                
-                # Calcola l'angolo del wedge per sfasare la percentuale
-                angle = (wedge.theta2 + wedge.theta1) / 2
-                
-                # Sfasa la distanza radiale in base all'indice per evitare sovrapposizioni
-                base_distance = 0.6  # Più vicino al centro
-                offset = (i % 3) * 0.08  # Offset più piccolo
-                pct_distance = base_distance + offset
-                
-                # Calcola nuova posizione
-                x = pct_distance * np.cos(np.radians(angle))
-                y = pct_distance * np.sin(np.radians(angle))
-                autotext.set_position((x, y))
-            
-            ax.set_title("Distribuzione Valore per Categoria", 
-                        fontsize=14, fontweight='bold', pad=20)
-            
-            # Aggiungi legenda con percentuali, nomi e valori
-            legend_labels = [f"{percentages[cat]:.2f}% - {cat}: €{val:,.0f}" 
-                           for cat, val in category_values.items()]
-            ax.legend(wedges, legend_labels, title="Categorie",
-                     loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1))
+
+            # Rileva se è visualizzazione ridotta (RoadMap)
+            is_compact = external_ax
+
+            if is_compact:
+                # Modalità compatta: solo numeri sulle fette
+                # Crea lista dei numeri per ogni fetta
+                slice_numbers = [str(i + 1) for i in range(len(category_values))]
+
+                wedges, texts = ax.pie(
+                    category_values.values,
+                    labels=slice_numbers,  # Numeri progressivi sulle fette
+                    colors=colors,
+                    startangle=90,
+                    labeldistance=0.5,  # Posizione iniziale
+                    textprops={'fontsize': 10, 'weight': 'normal', 'color': 'black'}  # Non grassetto
+                )
+
+                # Posiziona i numeri: il numero 1 più vicino al centro, poi progressivamente più lontani
+                num_slices = len(category_values)
+                for i, (text, wedge) in enumerate(zip(texts, wedges)):
+                    # Calcola l'angolo del wedge
+                    angle = (wedge.theta2 + wedge.theta1) / 2
+
+                    # Distanza progressiva aumentata: da 0.3 (più vicino al centro) a 0.85 (più verso il bordo)
+                    # Maggiore spaziatura per evitare sovrapposizioni sui settori stretti
+                    min_distance = 0.3
+                    max_distance = 0.85
+                    if num_slices > 1:
+                        distance = min_distance + (max_distance - min_distance) * (i / (num_slices - 1))
+                    else:
+                        distance = (min_distance + max_distance) / 2
+
+                    # Calcola nuova posizione
+                    x = distance * np.cos(np.radians(angle))
+                    y = distance * np.sin(np.radians(angle))
+                    text.set_position((x, y))
+            else:
+                # Modalità estesa: percentuali sulle fette
+                wedges, texts, autotexts = ax.pie(
+                    category_values.values,
+                    labels=category_values.index,
+                    autopct='%1.2f%%',
+                    colors=colors,
+                    startangle=90,
+                    textprops={'fontsize': 10},
+                    pctdistance=0.7
+                )
+
+                # Migliora l'aspetto del testo
+                for i, (autotext, wedge) in enumerate(zip(autotexts, wedges)):
+                    autotext.set_color('black')
+                    autotext.set_weight('bold')
+
+                    # Calcola l'angolo del wedge
+                    angle = (wedge.theta2 + wedge.theta1) / 2
+
+                    # Sfasa la distanza radiale
+                    base_distance = 0.6
+                    offset = (i % 3) * 0.08
+                    pct_distance = base_distance + offset
+
+                    # Calcola nuova posizione
+                    x = pct_distance * np.cos(np.radians(angle))
+                    y = pct_distance * np.sin(np.radians(angle))
+                    autotext.set_position((x, y))
+
+            # Legenda numerata identica per entrambe le modalità
+            legend_labels = [f"{i+1}. {cat} - {percentages[cat]:.2f}% (€{val:,.0f})"
+                           for i, (cat, val) in enumerate(category_values.items())]
+
+            if is_compact:
+                # Sposta la torta più a sinistra per far vedere tutta la legenda
+                ax.set_position([0.0, 0.15, 0.40, 0.7])  # [left, bottom, width, height]
+
+                # Titolo centrato rispetto all'intero riquadro (non solo la torta)
+                # Fontsize aumentato del 50%: 11 * 1.5 = 16.5 ~ 17
+                fig.suptitle("Valore per Categoria",
+                            fontsize=17, fontweight='bold',
+                            y=0.92, x=0.5)
+
+                # Legenda compatta e leggibile a destra
+                ax.legend(wedges, legend_labels,
+                         loc="center left", bbox_to_anchor=(1.0, 0.5),
+                         fontsize=8.4, frameon=True, borderaxespad=0)
+            else:
+                # Titolo per modalità estesa
+                ax.set_title("Valore per Categoria",
+                            fontsize=14, fontweight='bold', pad=20)
+
+                # Legenda estesa
+                ax.legend(wedges, legend_labels, title="Categorie",
+                         loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1),
+                         fontsize=10, frameon=True)
 
             # Mostra il grafico solo se non è un asse esterno
             if not external_ax:
@@ -382,17 +432,26 @@ class ChartsUI(BaseUIComponent):
             else:
                 fig = ax.figure
                 external_ax = True
-            
+                # Pulisci l'asse per rimuovere i testi precedenti
+                ax.clear()
+
             # Colori dal verde (basso rischio) al rosso (alto rischio)
             colors = ['#16a34a', '#84cc16', '#eab308', '#f97316', '#dc2626']
             bar_colors = [colors[min(int(level)-1, 4)] for level in risk_counts.index]
             
             bars = ax.bar(risk_counts.index, risk_counts.values, color=bar_colors, alpha=0.8)
             
-            # Personalizzazione
-            ax.set_xlabel("Livello di Rischio", fontsize=12, fontweight='bold')
-            ax.set_ylabel("Numero di Asset", fontsize=12, fontweight='bold')
-            ax.set_title("Distribuzione del Rischio", fontsize=14, fontweight='bold', pad=20)
+            # Personalizzazione titolo e assi
+            is_compact = external_ax
+
+            if is_compact:
+                ax.set_title("Rischio", fontsize=11, fontweight='bold', pad=10)
+                ax.set_xlabel("Livello", fontsize=10, fontweight='bold')
+                ax.set_ylabel("N. Asset", fontsize=10, fontweight='bold')
+            else:
+                ax.set_title("Rischio", fontsize=14, fontweight='bold', pad=20)
+                ax.set_xlabel("Livello di Rischio", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Numero di Asset", fontsize=12, fontweight='bold')
             ax.grid(True, alpha=0.3, axis='y')
             
             # Aggiungi etichette sulle barre
@@ -447,17 +506,26 @@ class ChartsUI(BaseUIComponent):
             else:
                 fig = ax.figure
                 external_ax = True
-            
+                # Pulisci l'asse per rimuovere i testi precedenti
+                ax.clear()
+
             # Colori: verde per guadagni, rosso per perdite
             colors = ['#16a34a' if x >= 0 else '#dc2626' for x in category_performance.values]
-            
-            bars = ax.bar(range(len(category_performance)), category_performance.values, 
+
+            bars = ax.bar(range(len(category_performance)), category_performance.values,
                          color=colors, alpha=0.8)
-            
-            # Personalizzazione
-            ax.set_xlabel("Categoria", fontsize=12, fontweight='bold')
-            ax.set_ylabel("Performance (€)", fontsize=12, fontweight='bold')
-            ax.set_title("Performance per Categoria", fontsize=14, fontweight='bold', pad=20)
+
+            # Personalizzazione titolo e assi
+            is_compact = external_ax
+
+            if is_compact:
+                ax.set_title("Performance per Categoria", fontsize=11, fontweight='bold', pad=10)
+                ax.set_xlabel("Categoria", fontsize=10, fontweight='bold')
+                ax.set_ylabel("Performance (€)", fontsize=10, fontweight='bold')
+            else:
+                ax.set_title("Performance per Categoria", fontsize=14, fontweight='bold', pad=20)
+                ax.set_xlabel("Categoria", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Performance (€)", fontsize=12, fontweight='bold')
             ax.grid(True, alpha=0.3, axis='y')
             ax.axhline(y=0, color='black', linestyle='-', alpha=0.5)
             
@@ -798,9 +866,15 @@ class ChartsUI(BaseUIComponent):
             self.logger.debug(f"  - Linee totali nel grafico: {lines_added}")
             
             # 5. FORMATTAZIONE DEL GRAFICO
-            ax.set_title('Evoluzione Asset', fontsize=16, fontweight='bold', pad=20)
-            ax.set_xlabel('Anno', fontsize=12)
-            ax.set_ylabel('Valore (M€)', fontsize=12)
+            # Uniforma titolo e assi per RoadMap e Grafici
+            if external_ax:
+                ax.set_title('Evoluzione Asset', fontsize=11, fontweight='bold', pad=10)
+                ax.set_xlabel('Anno', fontsize=10)
+                ax.set_ylabel('Valore (M€)', fontsize=10)
+            else:
+                ax.set_title('Evoluzione Asset', fontsize=14, fontweight='bold', pad=20)
+                ax.set_xlabel('Anno', fontsize=12)
+                ax.set_ylabel('Valore (M€)', fontsize=12)
             
             # Seleziona solo primo, ultimo e anni pari per evitare sovrapposizioni
             years = sorted(set([d.year for d in dates]))
@@ -877,6 +951,9 @@ class ChartsUI(BaseUIComponent):
             # Filtra posizioni con valore > 0
             position_values = position_values[position_values > 0]
 
+            # Ordina per valore decrescente
+            position_values = position_values.sort_values(ascending=False)
+
             if position_values.empty:
                 if ax is None:
                     self._show_no_data_message("Nessun valore da visualizzare")
@@ -889,53 +966,100 @@ class ChartsUI(BaseUIComponent):
             else:
                 fig = ax.figure
                 external_ax = True
+                # Pulisci l'asse per rimuovere i testi precedenti
+                ax.clear()
 
             # Colori personalizzati
             colors = plt.cm.Set3(np.linspace(0, 1, len(position_values)))
 
             # Calcola le percentuali sul VALORE (per il grafico)
             total_value = position_values.sum()
-            value_percentages = (position_values / total_value * 100).round(2)
+            percentages = (position_values / total_value * 100).round(2)
 
-            wedges, texts, autotexts = ax.pie(
-                position_values.values,
-                labels=position_values.index,
-                autopct='%1.2f%%',
-                colors=colors,
-                startangle=90,
-                textprops={'fontsize': 10},
-                pctdistance=0.7
-            )
+            # Rileva se è visualizzazione ridotta (RoadMap)
+            is_compact = external_ax
 
-            # Migliora leggibilità delle etichette
-            for text in texts:
-                text.set_fontsize(11)
-                text.set_weight('bold')
+            if is_compact:
+                # Modalità compatta: solo numeri sulle fette
+                slice_numbers = [str(i + 1) for i in range(len(position_values))]
 
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontsize(9)
-                autotext.set_weight('bold')
+                wedges, texts = ax.pie(
+                    position_values.values,
+                    labels=slice_numbers,
+                    colors=colors,
+                    startangle=90,
+                    labeldistance=0.5,
+                    textprops={'fontsize': 10, 'weight': 'normal', 'color': 'black'}  # Non grassetto
+                )
 
-            # Titolo
-            ax.set_title(
-                'Suddivisione Valore per Posizione',
-                fontsize=14,
-                weight='bold',
-                pad=20
-            )
+                # Posiziona i numeri: il numero 1 più vicino al centro, poi progressivamente più lontani
+                num_slices = len(position_values)
+                for i, (text, wedge) in enumerate(zip(texts, wedges)):
+                    angle = (wedge.theta2 + wedge.theta1) / 2
 
-            # Legenda con numero di asset, valore totale e percentuale
-            legend_labels = [
-                f'{pos}: {position_counts[pos]} asset, €{position_values[pos]:,.2f} ({value_percentages[pos]}%)'
-                for pos in position_values.index
-            ]
-            ax.legend(
-                legend_labels,
-                loc='center left',
-                bbox_to_anchor=(1, 0, 0.5, 1),
-                fontsize=9
-            )
+                    # Distanza progressiva aumentata: da 0.3 (più vicino al centro) a 0.85 (più verso il bordo)
+                    min_distance = 0.3
+                    max_distance = 0.85
+                    if num_slices > 1:
+                        distance = min_distance + (max_distance - min_distance) * (i / (num_slices - 1))
+                    else:
+                        distance = (min_distance + max_distance) / 2
+
+                    x = distance * np.cos(np.radians(angle))
+                    y = distance * np.sin(np.radians(angle))
+                    text.set_position((x, y))
+            else:
+                # Modalità estesa: percentuali sulle fette
+                wedges, texts, autotexts = ax.pie(
+                    position_values.values,
+                    labels=position_values.index,
+                    autopct='%1.2f%%',
+                    colors=colors,
+                    startangle=90,
+                    textprops={'fontsize': 10},
+                    pctdistance=0.7
+                )
+
+                # Migliora l'aspetto del testo
+                for i, (autotext, wedge) in enumerate(zip(autotexts, wedges)):
+                    autotext.set_color('black')
+                    autotext.set_weight('bold')
+
+                    angle = (wedge.theta2 + wedge.theta1) / 2
+                    base_distance = 0.6
+                    offset = (i % 3) * 0.08
+                    pct_distance = base_distance + offset
+                    x = pct_distance * np.cos(np.radians(angle))
+                    y = pct_distance * np.sin(np.radians(angle))
+                    autotext.set_position((x, y))
+
+            # Legenda numerata identica per entrambe le modalità
+            legend_labels = [f"{i+1}. {pos} - {percentages[pos]:.2f}% (€{val:,.0f})"
+                           for i, (pos, val) in enumerate(position_values.items())]
+
+            if is_compact:
+                # Sposta la torta più a sinistra per far vedere tutta la legenda
+                ax.set_position([0.0, 0.15, 0.40, 0.7])
+
+                # Titolo centrato rispetto all'intero riquadro (non solo la torta)
+                # Fontsize aumentato del 50%: 11 * 1.5 = 16.5 ~ 17
+                fig.suptitle("Valore per Posizione",
+                            fontsize=17, fontweight='bold',
+                            y=0.92, x=0.5)
+
+                # Legenda compatta e leggibile a destra
+                ax.legend(wedges, legend_labels,
+                         loc="center left", bbox_to_anchor=(1.0, 0.5),
+                         fontsize=8.4, frameon=True, borderaxespad=0)
+            else:
+                # Titolo per modalità estesa
+                ax.set_title("Valore per Posizione",
+                            fontsize=14, fontweight='bold', pad=20)
+
+                # Legenda estesa
+                ax.legend(wedges, legend_labels, title="Posizioni",
+                         loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1),
+                         fontsize=10, frameon=True)
 
             plt.tight_layout()
 
