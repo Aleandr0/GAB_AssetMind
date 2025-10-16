@@ -250,6 +250,7 @@ class PortfolioTable(BaseUIComponent):
         self.tree_style = None
         self.zoom_level = 100
         self.active_filter_popup = None
+        self.display_columns: List[str] = []
 
         # Controlli UI
         self.records_btn = None
@@ -263,11 +264,6 @@ class PortfolioTable(BaseUIComponent):
         self.update_manager = None
         self.column_resizer = None
         self.refresh_optimizer = None
-        self.alert_row_ids: Dict[str, Set[int]] = {
-            "price_alert": set(),
-            "nav_issue": set(),
-            "manual_issue": set(),
-        }
     
     def create_table(self) -> ctk.CTkFrame:
         """Crea la tabella portfolio completa"""
@@ -363,7 +359,7 @@ class PortfolioTable(BaseUIComponent):
         )
         clear_filters_btn.pack(side="left", padx=(10, 0))
         
-        # Pulsante Riordino 
+        # Pulsante Riordino
         sort_btn = ctk.CTkButton(
             toggle_frame,
             text="📊 Riordino",
@@ -374,7 +370,19 @@ class PortfolioTable(BaseUIComponent):
             hover_color=UIConfig.COLORS['info_hover']
         )
         sort_btn.pack(side="left", padx=(10, 0))
-        
+
+        # Pulsante Reset ID
+        reset_id_btn = ctk.CTkButton(
+            toggle_frame,
+            text="🔄 Reset ID",
+            command=self._reset_ids,
+            **UIConfig.BUTTON_SIZES['medium'],
+            font=ctk.CTkFont(**UIConfig.FONTS['button']),
+            fg_color=UIConfig.COLORS['secondary'],
+            hover_color=UIConfig.COLORS['secondary_hover']
+        )
+        reset_id_btn.pack(side="left", padx=(10, 0))
+
         # Pulsante Aggiorna Prezzi
         self.market_update_btn = ctk.CTkButton(
             toggle_frame,
@@ -415,13 +423,9 @@ class PortfolioTable(BaseUIComponent):
         tree_container.grid_rowconfigure(0, weight=1)
         tree_container.grid_columnconfigure(0, weight=1)
         
-        # Definizione colonne
-        columns = (
-            "ID", "Category", "Position", "Asset Name", "ISIN", "Ticker", "Risk Level",
-            "Created At", "Created Amount", "Created Unit Price", "Created Total Value",
-            "Updated At", "Updated Amount", "Updated Unit Price", "Updated Total Value",
-            "Accumulation Plan", "Accumulation Amount", "Income Per Year", "Rental Income", "Note"
-        )
+        # Definizione colonne in base all'ordine del file Excel
+        columns = self._determine_display_columns()
+        self.display_columns = list(columns)
         
         # TreeView
         self.portfolio_tree = ttk.Treeview(
@@ -474,7 +478,8 @@ class PortfolioTable(BaseUIComponent):
             "Created Total Value": 150, "Updated At": 120, "Updated Amount": 160,
             "Updated Unit Price": 140, "Updated Total Value": 150,
             "Accumulation Plan": 180, "Accumulation Amount": 180,
-            "Income Per Year": 160, "Rental Income": 140, "Note": 250
+            "Income Per Year": 160, "Rental Income": 140, "Note": 250,
+            "Return %": 120
         }
 
         # Titoli colonne
@@ -498,7 +503,8 @@ class PortfolioTable(BaseUIComponent):
             "Accumulation Amount": "Accumulation Amount ▼",
             "Income Per Year": "Income Per Year ▼",
             "Rental Income": "Rental Income ▼",
-            "Note": "Note ▼"
+            "Note": "Note ▼",
+            "Return %": "Return % ▼"
         }
 
         for col in columns:
@@ -946,10 +952,14 @@ class PortfolioTable(BaseUIComponent):
                 "Accumulation Amount": "Accumulation Amount",
                 "Income Per Year": "Income Per Year",
                 "Rental Income": "Rental Income",
-                "Note": "Note"
+                "Note": "Note",
+                "Return %": "Return %"
             }
             
-            for display_name, db_name in FieldMapping.DISPLAY_TO_DB.items():
+            column_order = self.display_columns if self.display_columns else list(FieldMapping.DISPLAY_TO_DB.keys())
+
+            for display_name in column_order:
+                db_name = FieldMapping.DISPLAY_TO_DB.get(display_name, display_name)
                 base_header = column_headers_base.get(display_name, display_name)
                 
                 if db_name in self.column_filters:
@@ -1019,76 +1029,105 @@ class PortfolioTable(BaseUIComponent):
         if df.empty:
             self.logger.debug("DataFrame vuoto, esco senza aggiungere righe")
             return
-        
-        # Identifica i record storici se stiamo mostrando tutti i record
-        historical_ids = set()
-        if self.show_all_records:
-            current_df = self.portfolio_manager.get_current_assets_only()
-            current_ids = set(current_df['id'].astype(int))
-            all_ids = set(df['id'].astype(int))
-            historical_ids = all_ids - current_ids
-        
-        # Inserisce i nuovi dati con colorazione appropriata
+
+        # Aggiorna l'ordine delle colonne se necessario
+        try:
+            new_display_columns = [FieldMapping.DB_TO_DISPLAY.get(col, col) for col in df.columns]
+            if self.display_columns != new_display_columns:
+                self.display_columns = new_display_columns
+                self.portfolio_tree["columns"] = new_display_columns
+                self._configure_columns(tuple(new_display_columns))
+                for col in new_display_columns:
+                    self.portfolio_tree.heading(col, command=lambda c=col: self._show_column_filter(c))
+                self._update_column_headers()
+        except Exception as col_exc:
+            self.logger.debug(f"Impossibile aggiornare l'ordine colonne dinamicamente: {col_exc}")
+
+        # Carica i colori dal file Excel
+        from openpyxl import load_workbook
+        from openpyxl.styles.colors import Color
+
+        excel_colors = {}  # {row_id: {'fg': color, 'bg': color}}
+        try:
+            wb = load_workbook(self.portfolio_manager.excel_file)
+            ws = wb.active
+
+            # Leggi i colori per ogni riga (skip header)
+            for row_idx in range(2, ws.max_row + 1):
+                id_cell = ws.cell(row=row_idx, column=1)
+                try:
+                    row_id = int(id_cell.value)
+                except (TypeError, ValueError):
+                    continue
+
+                # Leggi font color (per record storici = azzurro)
+                fg_color = None
+                if id_cell.font and id_cell.font.color:
+                    if hasattr(id_cell.font.color, 'rgb') and id_cell.font.color.rgb:
+                        fg_color = id_cell.font.color.rgb
+
+                # Leggi background color (per alert = rosso)
+                bg_color = None
+                if id_cell.fill and id_cell.fill.patternType:
+                    if id_cell.fill.fgColor and hasattr(id_cell.fill.fgColor, 'rgb'):
+                        if id_cell.fill.fgColor.rgb and id_cell.fill.fgColor.rgb != '00000000':
+                            bg_color = id_cell.fill.fgColor.rgb
+
+                if fg_color or bg_color:
+                    excel_colors[row_id] = {'fg': fg_color, 'bg': bg_color}
+
+            wb.close()
+            self.logger.info(f"Caricati colori Excel per {len(excel_colors)} righe")
+        except Exception as e:
+            self.logger.error(f"Errore caricamento colori da Excel: {e}")
+
+        # Inserisce i dati con colorazione da Excel
         self.logger.debug(f"Iniziando inserimento {len(df)} righe nella tabella")
         rows_inserted = 0
+
         for _, row in df.iterrows():
             try:
                 values = self._format_row_values(row)
-                if rows_inserted < 3:  # Log solo prime 3 righe per evitare spam
+                if rows_inserted < 3:
                     self.logger.debug(f"Inserendo riga {rows_inserted + 1}: ID={row['id']}, Asset={row.get('asset_name', 'N/A')}")
+
                 item_id = self.portfolio_tree.insert("", "end", values=values)
 
-                tags: Set[str] = set()
-                row_id: Optional[int] = None
+                # Applica colori da Excel
                 try:
                     row_id = int(row['id'])
+                    if row_id in excel_colors:
+                        tag_name = f"row_{row_id}"
+                        colors = excel_colors[row_id]
+
+                        # Converti colori RGB da Excel a formato #RRGGBB
+                        fg_hex = None
+                        bg_hex = None
+
+                        if colors['fg'] and len(colors['fg']) >= 6:
+                            fg_hex = f"#{colors['fg'][-6:]}"  # Ultimi 6 char = RRGGBB
+                        if colors['bg'] and len(colors['bg']) >= 6:
+                            bg_hex = f"#{colors['bg'][-6:]}"
+
+                        # Configura tag dinamico per questa riga
+                        tag_config = {}
+                        if fg_hex:
+                            tag_config['foreground'] = fg_hex
+                        if bg_hex:
+                            tag_config['background'] = bg_hex
+
+                        if tag_config:
+                            self.portfolio_tree.tag_configure(tag_name, **tag_config)
+                            self.portfolio_tree.item(item_id, tags=(tag_name,))
+
                 except (TypeError, ValueError, KeyError):
-                    row_id = None
-
-                if row_id is not None and row_id in historical_ids:
-                    tags.add('historical')
-
-                note_value = str(row.get('note') or '')
-                note_upper = note_value.upper()
-                if 'PRICE ALERT' in note_upper:
-                    tags.add('price_alert')
-                if MANUAL_UPDATE_NOTE.upper() in note_upper:
-                    tags.add('manual_issue')
-
-                if row_id is not None:
-                    if row_id in self.alert_row_ids.get('price_alert', set()):
-                        tags.add('price_alert')
-                    if row_id in self.alert_row_ids.get('nav_issue', set()):
-                        tags.add('nav_issue')
-                    if row_id in self.alert_row_ids.get('manual_issue', set()):
-                        tags.add('manual_issue')
-
-                if tags:
-                    self.portfolio_tree.item(item_id, tags=tuple(tags))
+                    pass
 
                 rows_inserted += 1
             except Exception as e:
                 self.logger.error(f"Errore inserimento riga {rows_inserted}: {e}")
-        
+
         self.logger.debug(f"Inserimento completato: {rows_inserted} righe inserite su {len(df)} totali")
-        
-        # Verifica che le righe siano effettivamente visibili
-        children = self.portfolio_tree.get_children()
-        self.logger.debug(f"Righe nella tabella dopo inserimento: {len(children)}")
-        if len(children) > 0:
-            # Mostra solo la prima riga per verifica
-            child = children[0]
-            values = self.portfolio_tree.item(child, "values")
-            self.logger.debug(f"Prima riga visibile - ID: {values[0] if values else 'N/A'}")
-        
-        # Configura il tag per record storici
-        self.portfolio_tree.tag_configure('historical', foreground='#0066CC')
-        self.portfolio_tree.tag_configure('price_alert', foreground='#B22222', background='#FFE5E5')
-        self.portfolio_tree.tag_configure('nav_issue', foreground='#B22222', background='#FFE5E5')
-        self.portfolio_tree.tag_configure('manual_issue', foreground='#B22222', background='#FFE5E5')
-
-
-        self._apply_alert_tags(nav_changed=False, price_changed=False)
         
         # Aggiorna contatori
         self._update_button_counts(df)
@@ -1117,28 +1156,76 @@ class PortfolioTable(BaseUIComponent):
     
     def _format_row_values(self, row: pd.Series) -> tuple:
         """Formatta i valori di una riga per la visualizzazione"""
-        return (
-            row['id'],
-            row['category'],
-            str(row['position']) if pd.notna(row['position']) else "-",
-            str(row['asset_name']),  # Rimossa troncatura - auto-resize gestirà la larghezza
-            str(row['isin']) if pd.notna(row['isin']) and str(row['isin']) != '' else "-",
-            str(row['ticker']) if pd.notna(row['ticker']) and str(row['ticker']) != '' else "-",
-            row['risk_level'],
-            DateFormatter.format_for_display(row['created_at']),
-            f"{row['created_amount']:,.2f}" if pd.notna(row['created_amount']) else "0",
-            CurrencyFormatter.format_for_display(row['created_unit_price']),
-            CurrencyFormatter.format_for_display(row['created_total_value']),
-            DateFormatter.format_for_display(row['updated_at']),
-            f"{row['updated_amount']:,.2f}" if pd.notna(row['updated_amount']) else "0",
-            CurrencyFormatter.format_for_display(row['updated_unit_price']),
-            CurrencyFormatter.format_for_display(row['updated_total_value']),
-            str(row['accumulation_plan']) if pd.notna(row['accumulation_plan']) else "-",
-            CurrencyFormatter.format_for_display(row['accumulation_amount']),
-            CurrencyFormatter.format_for_display(row['income_per_year']),
-            CurrencyFormatter.format_for_display(row['rental_income']),
-            str(row['note']) if pd.notna(row['note']) else "-"
-        )
+        formatted_values: List[Any] = []
+        columns = self.display_columns or list(self.portfolio_tree["columns"])
+
+        for display_col in columns:
+            db_field = FieldMapping.DISPLAY_TO_DB.get(display_col, display_col)
+            value = row.get(db_field, row.get(display_col))
+
+            if db_field in FieldMapping.DATE_FIELDS:
+                formatted_values.append(DateFormatter.format_for_display(value))
+            elif db_field in FieldMapping.MONETARY_FIELDS:
+                formatted_values.append(CurrencyFormatter.format_for_display(value))
+            elif db_field in {'created_amount', 'updated_amount'}:
+                try:
+                    formatted_values.append(f"{float(value):,.2f}" if pd.notna(value) else "0")
+                except (TypeError, ValueError):
+                    formatted_values.append("0")
+            elif db_field == 'return_percentage':
+                formatted_values.append(self._format_return_percentage(value))
+            elif db_field == 'note':
+                formatted_values.append(str(value) if pd.notna(value) and str(value).strip() else "-")
+            elif db_field in {'risk_level'}:
+                formatted_values.append(str(value) if pd.notna(value) else "0")
+            elif db_field == 'id':
+                formatted_values.append(value if pd.notna(value) else "-")
+            else:
+                formatted_values.append(str(value) if pd.notna(value) and str(value).strip() else "-")
+
+        return tuple(formatted_values)
+    
+    def _format_return_percentage(self, value: Any) -> str:
+        """Formatta il rendimento annualizzato, mostrando '-' se non disponibile."""
+        try:
+            if value is None or pd.isna(value):
+                return "-"
+            return f"{float(value):.2f}%"
+        except (TypeError, ValueError):
+            return "-"
+
+    def _determine_display_columns(self, df: Optional[pd.DataFrame] = None) -> tuple[str, ...]:
+        """
+        Determina le colonne da visualizzare seguendo l'ordine del file Excel.
+
+        Args:
+            df: DataFrame opzionale da cui estrarre le colonne.
+                Se None, carica i dati (compatibilità backward)
+
+        Returns:
+            Tuple con i nomi delle colonne display
+        """
+        ordered_columns: List[str] = []
+        try:
+            # Usa DataFrame passato o carica da disco (fallback)
+            df_snapshot = df if df is not None else self.portfolio_manager.load_data()
+            if not df_snapshot.empty:
+                for db_field in df_snapshot.columns:
+                    display_name = FieldMapping.DB_TO_DISPLAY.get(db_field, db_field)
+                    ordered_columns.append(display_name)
+        except Exception as exc:
+            self.logger.debug(f"Impossibile determinare colonne dal DataFrame: {exc}")
+
+        if not ordered_columns:
+            ordered_columns = [
+                "ID", "Category", "Position", "Asset Name", "ISIN", "Ticker", "Risk Level",
+                "Created At", "Created Amount", "Created Unit Price", "Created Total Value",
+                "Updated At", "Updated Amount", "Updated Unit Price", "Updated Total Value",
+                "Accumulation Plan", "Accumulation Amount", "Income Per Year", "Rental Income",
+                "Note", "Return %"
+            ]
+
+        return tuple(ordered_columns)
     
     def _update_button_counts(self, df: pd.DataFrame):
         """Aggiorna i contatori sui bottoni Record/Asset"""
@@ -1300,11 +1387,84 @@ class PortfolioTable(BaseUIComponent):
             )
             
             self.logger.info("File Excel aggiornato e ricaricato")
-            
+
         except Exception as e:
             error_msg = ErrorHandler.handle_file_error(e, "riordino record")
             messagebox.showerror("Errore Riordino", f"Errore durante il riordino:\n\n{error_msg}")
             self.logger.error(f"Errore riordino record: {e}")
+            import traceback
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
+
+    def _reset_ids(self):
+        """Rinumera progressivamente gli ID da 1 e rimuove tutte le evidenziazioni rosse"""
+        try:
+            # Conferma utente
+            result = messagebox.askyesno(
+                "Reset ID",
+                "Vuoi resettare gli ID di tutti i record?\n\n"
+                "Questa operazione:\n"
+                "• Rinumererà gli ID progressivamente da 1\n"
+                "• Rimuoverà tutte le evidenziazioni di colore\n"
+                "• Modificherà permanentemente il file Excel\n\n"
+                "Continuare?"
+            )
+
+            if not result:
+                return
+
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+
+            # Carica il file Excel direttamente con openpyxl (NON con pandas)
+            wb = load_workbook(self.portfolio_manager.excel_file)
+            ws = wb.active
+
+            if ws.max_row <= 1:  # Solo header
+                messagebox.showinfo("Info", "Nessun record presente.")
+                wb.close()
+                return
+
+            total_records = ws.max_row - 1  # Escludi header
+            self.logger.info(f"Reset ID per {total_records} record...")
+
+            # Rinumera gli ID nella prima colonna (colonna A)
+            for row_idx, new_id in enumerate(range(1, total_records + 1), start=2):
+                ws.cell(row=row_idx, column=1).value = new_id
+
+            # Rimuovi solo il riempimento di colore di sfondo (lascia intatti i font)
+            default_fill = PatternFill(fill_type=None)
+
+            for row_idx in range(2, ws.max_row + 1):  # Salta l'header (riga 1)
+                for col_idx in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    # Rimuovi solo il fill, NON toccare il font
+                    cell.fill = default_fill
+
+            # Rimuovi tutte le regole di formattazione condizionale
+            if hasattr(ws, 'conditional_formatting'):
+                # Svuota completamente il conditional_formatting
+                ws.conditional_formatting._cf_rules.clear()
+
+            wb.save(self.portfolio_manager.excel_file)
+            wb.close()
+
+            self.logger.info("ID resettati e evidenziazioni rimosse")
+
+            # Ricarica i dati nell'applicazione
+            self.trigger_callback('data_changed')
+
+            messagebox.showinfo(
+                "Reset Completato",
+                f"Reset completato con successo!\n\n"
+                f"• {total_records} ID rinumerati da 1 a {total_records}\n"
+                f"• Evidenziazioni di sfondo rimosse\n\n"
+                f"File aggiornato: {self.portfolio_manager.excel_file}"
+            )
+
+        except Exception as e:
+            error_msg = ErrorHandler.handle_file_error(e, "reset ID")
+            messagebox.showerror("Errore Reset", f"Errore durante il reset:\n\n{error_msg}")
+            self.logger.error(f"Errore reset ID: {e}")
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
 
@@ -1321,97 +1481,8 @@ class PortfolioTable(BaseUIComponent):
         new_text = "⏳ Aggiornamento..." if is_running else "🔁 Aggiorna Prezzi"
         safe_execute(lambda: self.market_update_btn.configure(state=new_state, text=new_text))
 
-    def mark_alert_rows(
-        self,
-        *,
-        price_alert_ids: Optional[List[Any]] = None,
-        nav_issue_ids: Optional[List[Any]] = None,
-        manual_issue_ids: Optional[List[Any]] = None,
-    ) -> None:
-        """Aggiorna l'evidenziazione degli asset con alert di prezzo, NAV o manuali."""
-        price_changed = price_alert_ids is not None
-        nav_changed = nav_issue_ids is not None
-        manual_changed = manual_issue_ids is not None
-
-        def _normalize(values: Optional[List[Any]]) -> Set[int]:
-            normalized: Set[int] = set()
-            for value in values or []:
-                try:
-                    normalized.add(int(value))
-                except (TypeError, ValueError):
-                    continue
-            return normalized
-
-        if price_changed:
-            self.alert_row_ids["price_alert"] = _normalize(price_alert_ids)
-        if nav_changed:
-            self.alert_row_ids["nav_issue"] = _normalize(nav_issue_ids)
-        if manual_changed:
-            self.alert_row_ids["manual_issue"] = _normalize(manual_issue_ids)
-
-        self._apply_alert_tags(nav_changed=nav_changed, price_changed=price_changed, manual_changed=manual_changed)
-
-    def _apply_alert_tags(self, *, nav_changed: bool = True, price_changed: bool = False, manual_changed: bool = False) -> None:
-        """Applica i tag di alert ai record mostrati nella tabella."""
-        if not self.portfolio_tree:
-            return
-
-        try:
-            items = self.portfolio_tree.get_children()
-        except Exception as exc:
-            self.logger.debug("Impossibile recuperare le righe della tabella: %s", exc)
-            return
-
-        nav_ids = self.alert_row_ids.get("nav_issue", set())
-        price_ids = self.alert_row_ids.get("price_alert", set())
-        manual_ids = self.alert_row_ids.get("manual_issue", set())
-
-        for item in items:
-            try:
-                values = self.portfolio_tree.item(item, "values")
-            except Exception as exc:
-                self.logger.debug("Impossibile leggere i valori della riga %s: %s", item, exc)
-                continue
-
-            row_id: Optional[int] = None
-            if values:
-                try:
-                    row_id = int(values[0])
-                except (TypeError, ValueError):
-                    row_id = None
-
-            try:
-                current_tags = set(self.portfolio_tree.item(item, "tags") or ())
-            except Exception as exc:
-                self.logger.debug("Impossibile leggere i tag della riga %s: %s", item, exc)
-                current_tags = set()
-
-            if row_id is not None:
-                if nav_changed:
-                    if row_id in nav_ids:
-                        current_tags.add("nav_issue")
-                    else:
-                        current_tags.discard("nav_issue")
-                elif row_id in nav_ids:
-                    current_tags.add("nav_issue")
-
-                if price_changed:
-                    if row_id in price_ids:
-                        current_tags.add("price_alert")
-                    else:
-                        current_tags.discard("price_alert")
-                elif row_id in price_ids:
-                    current_tags.add("price_alert")
-
-                if manual_changed:
-                    if row_id in manual_ids:
-                        current_tags.add("manual_issue")
-                    else:
-                        current_tags.discard("manual_issue")
-                elif row_id in manual_ids:
-                    current_tags.add("manual_issue")
-
-            self.portfolio_tree.item(item, tags=tuple(current_tags))
+    # Funzione rimossa: mark_alert_rows() - non più necessaria
+    # Le evidenziazioni ora vengono lette direttamente dal file Excel
 
     def _color_historical_records(self):
         """Colora i record storici di azzurro nel file Excel"""

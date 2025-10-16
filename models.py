@@ -60,20 +60,22 @@ class Asset:
         created_unit_price/updated_unit_price: Prezzo unitario iniziale/attuale
         created_total_value/updated_total_value: Valore totale iniziale/attuale
         accumulation_plan: Descrizione piano di accumulo
-        accumulation_amount: Importo accumulo mensile
+        accumulation_amount: Importo accumulo periodico
         income_per_year: Reddito annuale da investimento
         rental_income: Reddito annuale da affitto
         note: Note libere
+        return_percentage: Rendimento percentuale annualizzato
     """
     
-    def __init__(self, asset_id: int = None, category: str = "", asset_name: str = "", 
-                 position: str = "", risk_level: int = 1, ticker: str = "", 
-                 isin: str = "", created_at: str = "", created_amount: float = 0.0, 
+    def __init__(self, asset_id: int = None, category: str = "", asset_name: str = "",
+                 position: str = "", risk_level: int = 1, ticker: str = "",
+                 isin: str = "", created_at: str = "", created_amount: float = 0.0,
                  created_unit_price: float = 0.0, created_total_value: float = 0.0,
-                 updated_at: str = "", updated_amount: float = 0.0, 
+                 updated_at: str = "", updated_amount: float = 0.0,
                  updated_unit_price: float = 0.0, updated_total_value: float = 0.0,
                  accumulation_plan: str = "", accumulation_amount: float = 0.0,
-                 income_per_year: float = 0.0, rental_income: float = 0.0, note: str = ""):
+                 income_per_year: float = 0.0, rental_income: float = 0.0, note: str = "",
+                 return_percentage: float = 0.0):
         self.id = asset_id
         self.category = category
         self.asset_name = asset_name
@@ -94,6 +96,7 @@ class Asset:
         self.income_per_year = income_per_year
         self.rental_income = rental_income
         self.note = note
+        self.return_percentage = return_percentage
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -116,7 +119,8 @@ class Asset:
             'accumulation_amount': self.accumulation_amount,
             'income_per_year': self.income_per_year,
             'rental_income': self.rental_income,
-            'note': self.note
+            'note': self.note,
+            'return_percentage': self.return_percentage
         }
 
 class PortfolioManager:
@@ -158,6 +162,11 @@ class PortfolioManager:
             "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro",
             "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
         ]
+
+        # Sistema di cache per ridurre I/O disco
+        self._data_cache = None
+        self._cache_timestamp = None
+
         self._initialize_excel()
     
     def _initialize_excel(self):
@@ -168,10 +177,29 @@ class PortfolioManager:
             df = pd.DataFrame(columns=columns)
             df.to_excel(self.excel_file, index=False)
     
-    def load_data(self) -> pd.DataFrame:
-        """Loader semplice e collaudato: legge il foglio attivo/default,
-        pulisce solo le date e calcola i totali mancanti, senza rinomine aggressive."""
+    def load_data(self, use_cache: bool = True) -> pd.DataFrame:
+        """
+        Carica dati Excel con sistema di cache intelligente.
+
+        Args:
+            use_cache: Se True, usa cache se disponibile e valida (default: True)
+
+        Returns:
+            DataFrame con i dati del portfolio
+        """
         try:
+            # Verifica cache valida
+            if use_cache and self._data_cache is not None:
+                try:
+                    current_mtime = os.path.getmtime(self.excel_file)
+                    if current_mtime == self._cache_timestamp:
+                        self.logger.debug("load_data: usando cache (file non modificato)")
+                        return self._data_cache.copy()
+                except OSError:
+                    pass  # File non esiste o errore accesso, ricarica
+
+            # Carica da disco
+            self.logger.debug("load_data: caricamento da disco")
             df = pd.read_excel(self.excel_file, keep_default_na=False, na_values=[''])
             self.logger.debug(f"load_data: columns={list(df.columns)} rows={len(df)}")
 
@@ -179,6 +207,11 @@ class PortfolioManager:
             for col in ['created_at', 'updated_at']:
                 if col in df.columns:
                     df[col] = df[col].apply(self._clean_date_from_excel)
+
+            # Aggiungi colonna return_percentage se manca (per compatibilità con file Excel esistenti)
+            if 'return_percentage' not in df.columns:
+                df['return_percentage'] = 0.0
+                self.logger.info("Colonna return_percentage aggiunta al DataFrame per compatibilità")
 
             # Calcola i totali se mancanti
             if 'created_total_value' in df.columns:
@@ -189,10 +222,23 @@ class PortfolioManager:
                 mask = pd.isna(df['updated_total_value'])
                 df.loc[mask, 'updated_total_value'] = df.loc[mask, 'updated_amount'].fillna(0) * df.loc[mask, 'updated_unit_price'].fillna(0)
 
+            # Aggiorna cache
+            self._data_cache = df.copy()
+            try:
+                self._cache_timestamp = os.path.getmtime(self.excel_file)
+            except OSError:
+                self._cache_timestamp = None
+
             return df
         except Exception as e:
             self.logger.error(f"Errore nel caricamento dati: {e}")
             return pd.DataFrame()
+
+    def invalidate_cache(self):
+        """Invalida la cache dopo modifiche al file Excel"""
+        self._data_cache = None
+        self._cache_timestamp = None
+        self.logger.debug("Cache invalidata")
     
 
 
@@ -747,31 +793,142 @@ class PortfolioManager:
         except Exception as e:
             self.logger.error(f"Errore pulizia data da Excel: {e}")
             return ""
+
+    def calculate_return_percentage(self, created_unit_price: float, updated_unit_price: float,
+                                   created_at: str, updated_at: str) -> float:
+        """
+        Calcola il rendimento percentuale annualizzato basato sui prezzi unitari e le date.
+
+        Formula: ((updated_price / created_price) - 1) * (365 / giorni) * 100
+
+        Args:
+            created_unit_price: Prezzo unitario iniziale
+            updated_unit_price: Prezzo unitario attuale
+            created_at: Data di creazione (formato YYYY-MM-DD)
+            updated_at: Data di aggiornamento (formato YYYY-MM-DD)
+
+        Returns:
+            Rendimento percentuale annualizzato, o 0.0 se il calcolo non è possibile
+        """
+        try:
+            # Verifica prezzi validi
+            if not created_unit_price or created_unit_price <= 0:
+                return 0.0
+            if not updated_unit_price or updated_unit_price <= 0:
+                return 0.0
+
+            # Verifica date valide
+            if not created_at or not updated_at:
+                return 0.0
+
+            # Converti le date
+            from datetime import datetime
+            try:
+                date_created = datetime.strptime(str(created_at).split()[0], '%Y-%m-%d')
+                date_updated = datetime.strptime(str(updated_at).split()[0], '%Y-%m-%d')
+            except (ValueError, IndexError):
+                return 0.0
+
+            # Calcola i giorni trascorsi
+            days_elapsed = (date_updated - date_created).days
+
+            # Se le date sono uguali o invertite, rendimento non calcolabile
+            if days_elapsed <= 0:
+                return 0.0
+
+            # Calcola il rendimento semplice
+            simple_return = (float(updated_unit_price) / float(created_unit_price)) - 1
+
+            # Annualizza il rendimento
+            annualized_return = simple_return * (365.0 / days_elapsed) * 100.0
+
+            return round(annualized_return, 2)
+
+        except Exception as e:
+            self.logger.debug(f"Errore calcolo rendimento: {e}")
+            return 0.0
     
     def save_data(self, df: pd.DataFrame):
         try:
             # Salva usando openpyxl per supportare le formule Excel
             self.save_data_with_formulas(df)
+            # Invalida cache dopo salvataggio
+            self.invalidate_cache()
             return True
         except Exception as e:
             self.logger.error(f"Errore nel salvataggio dati: {e}")
             return False
     
     def save_data_with_formulas(self, df: pd.DataFrame):
-        """Salva i dati con formule Excel per i calcoli automatici"""
-        from openpyxl import Workbook
+        """Salva i dati con formule Excel per i calcoli automatici, preservando le formattazioni"""
+        from openpyxl import Workbook, load_workbook
         from openpyxl.utils.dataframe import dataframe_to_rows
         from datetime import datetime
-        
+        import os
+
+        # Salva i colori esistenti prima di sovrascrivere
+        existing_colors = {}  # {row_id: {'fg': color, 'bg': color}}
+        if os.path.exists(self.excel_file):
+            try:
+                wb_old = load_workbook(self.excel_file)
+                ws_old = wb_old.active
+
+                for row_idx in range(2, ws_old.max_row + 1):
+                    id_cell = ws_old.cell(row=row_idx, column=1)
+                    try:
+                        row_id = int(id_cell.value)
+                    except (TypeError, ValueError):
+                        continue
+
+                    # Salva font color
+                    fg_color = None
+                    if id_cell.font and id_cell.font.color:
+                        if hasattr(id_cell.font.color, 'rgb') and id_cell.font.color.rgb:
+                            fg_color = id_cell.font.color.rgb
+
+                    # Salva background color
+                    bg_fill = None
+                    if id_cell.fill and id_cell.fill.patternType:
+                        if id_cell.fill.fgColor and hasattr(id_cell.fill.fgColor, 'rgb'):
+                            if id_cell.fill.fgColor.rgb and id_cell.fill.fgColor.rgb != '00000000':
+                                bg_fill = id_cell.fill
+
+                    if fg_color or bg_fill:
+                        existing_colors[row_id] = {'fg': fg_color, 'bg': bg_fill}
+
+                wb_old.close()
+                self.logger.info(f"Salvati {len(existing_colors)} colori esistenti prima del salvataggio")
+            except Exception as e:
+                self.logger.warning(f"Impossibile salvare colori esistenti: {e}")
+
         # Crea copia del DataFrame e formatta le date come solo giorno
         df_clean = df.copy()
-        
+
+        # Calcola il rendimento percentuale per ogni record
+        if 'return_percentage' not in df_clean.columns:
+            df_clean['return_percentage'] = 0.0
+
+        for idx in df_clean.index:
+            try:
+                created_price = df_clean.loc[idx, 'created_unit_price']
+                updated_price = df_clean.loc[idx, 'updated_unit_price']
+                created_at = df_clean.loc[idx, 'created_at']
+                updated_at = df_clean.loc[idx, 'updated_at']
+
+                return_pct = self.calculate_return_percentage(
+                    created_price, updated_price, created_at, updated_at
+                )
+                df_clean.loc[idx, 'return_percentage'] = return_pct
+            except Exception as e:
+                self.logger.debug(f"Errore calcolo rendimento per riga {idx}: {e}")
+                df_clean.loc[idx, 'return_percentage'] = 0.0
+
         # Converte le colonne date per rimuovere l'ora
         date_columns = ['created_at', 'updated_at']
         for col in date_columns:
             if col in df_clean.columns:
                 df_clean[col] = df_clean[col].apply(self._format_date_for_excel)
-        
+
         # Crea workbook
         wb = Workbook()
         ws = wb.active
@@ -816,10 +973,67 @@ class PortfolioManager:
                 
         except (ValueError, IndexError) as e:
             self.logger.error(f"Errore nell'applicazione delle formule: {e}")
-        
+
+        # Riapplica i colori salvati
+        if existing_colors:
+            from openpyxl.styles import Font, PatternFill
+            from openpyxl.styles.colors import Color
+            colors_reapplied = 0
+
+            for row_idx in range(2, ws.max_row + 1):
+                id_cell = ws.cell(row=row_idx, column=1)
+                try:
+                    row_id = int(id_cell.value)
+                except (TypeError, ValueError):
+                    continue
+
+                if row_id in existing_colors:
+                    colors = existing_colors[row_id]
+
+                    # Riapplica font color a tutta la riga
+                    if colors['fg']:
+                        try:
+                            color_value = colors['fg']
+                            if isinstance(color_value, str):
+                                normalized_rgb = color_value.replace('#', '').upper()
+                            elif hasattr(color_value, 'rgb') and color_value.rgb:
+                                normalized_rgb = color_value.rgb.replace('#', '').upper()
+                            else:
+                                normalized_rgb = str(color_value).replace('#', '').upper()
+
+                            if len(normalized_rgb) >= 6:
+                                normalized_rgb = normalized_rgb[-6:]
+                            normalized_rgb = f"FF{normalized_rgb.zfill(6)}"
+
+                            font_color = Color(rgb=normalized_rgb)
+                            font = Font(color=font_color)
+                            for col_idx in range(1, ws.max_column + 1):
+                                ws.cell(row=row_idx, column=col_idx).font = font
+                        except Exception as color_exc:
+                            self.logger.warning(
+                                "Impossibile riapplicare il colore font per ID %s: %s",
+                                row_id,
+                                color_exc,
+                            )
+                    # Riapplica background fill
+                    if colors['bg']:
+                        try:
+                            for col_idx in range(1, ws.max_column + 1):
+                                ws.cell(row=row_idx, column=col_idx).fill = colors['bg']
+                        except Exception as fill_exc:
+                            self.logger.warning(
+                                "Impossibile riapplicare il fill per ID %s: %s",
+                                row_id,
+                                fill_exc,
+                            )
+
+                    colors_reapplied += 1
+
+            self.logger.info(f"Riapplicati colori a {colors_reapplied} righe")
+
         # Salva il file
         wb.save(self.excel_file)
-    
+
     def _format_date_for_excel(self, date_value):
         """Formatta le date per Excel usando il sistema centralizzato"""
         try:
@@ -832,7 +1046,7 @@ class PortfolioManager:
                 return None
             date_str = str(date_value)
             return date_str.split()[0] if " " in date_str else date_str
-    
+
     def add_asset(self, asset: Asset) -> bool:
         """
         Aggiunge un nuovo asset al portfolio
@@ -859,7 +1073,7 @@ class PortfolioManager:
         df = pd.concat([df, new_row], ignore_index=True)
         
         return self.save_data(df)
-    
+
     def update_asset(self, asset_id: int, updated_data: Dict[str, Any]) -> bool:
         df = self.load_data()
         
@@ -884,10 +1098,10 @@ class PortfolioManager:
     
     def get_asset(self, asset_id: int) -> Optional[Asset]:
         df = self.load_data()
-        
+
         if asset_id not in df['id'].values:
             return None
-        
+
         row = df[df['id'] == asset_id].iloc[0]
         return Asset(
             asset_id=row['id'],
@@ -909,13 +1123,14 @@ class PortfolioManager:
             accumulation_amount=row['accumulation_amount'],
             income_per_year=row['income_per_year'],
             rental_income=row['rental_income'],
-            note=row['note']
+            note=row['note'],
+            return_percentage=row.get('return_percentage', 0.0)
         )
     
     def get_assets_by_category(self, category: str) -> List[Asset]:
         df = self.load_data()
         filtered_df = df[df['category'] == category]
-        
+
         assets = []
         for _, row in filtered_df.iterrows():
             assets.append(Asset(
@@ -938,9 +1153,10 @@ class PortfolioManager:
                 accumulation_amount=row['accumulation_amount'],
                 income_per_year=row['income_per_year'],
                 rental_income=row['rental_income'],
-                note=row['note']
+                note=row['note'],
+                return_percentage=row.get('return_percentage', 0.0)
             ))
-        
+
         return assets
     
     def get_portfolio_summary(self) -> Dict[str, Any]:
@@ -1100,6 +1316,157 @@ class PortfolioManager:
         positions = df['position'].fillna('').unique()
         return [pos for pos in positions if pos != '']
     
+    def calculate_aggregated_return_by_category(self) -> Dict[str, float]:
+        """
+        Calcola il rendimento aggregato per ogni categoria.
+
+        Usa l'approccio C: calcola direttamente da valori aggregati
+        Formula: ((somma_updated_total - somma_created_total) / somma_created_total) * (365 / giorni_medi) * 100
+
+        Returns:
+            Dict con categoria -> rendimento percentuale annualizzato
+        """
+        try:
+            df = self.get_current_assets_only()
+            if df.empty:
+                return {}
+
+            results = {}
+
+            for category in df['category'].unique():
+                category_df = df[df['category'] == category]
+
+                # Somma i valori totali
+                created_total = category_df['created_total_value'].fillna(0).sum()
+                updated_total = category_df['updated_total_value'].fillna(category_df['created_total_value']).fillna(0).sum()
+
+                if created_total <= 0:
+                    results[category] = 0.0
+                    continue
+
+                # Calcola i giorni medi ponderati per valore
+                total_days_weighted = 0
+                total_weight = 0
+
+                for _, row in category_df.iterrows():
+                    created_val = row.get('created_total_value', 0) or 0
+                    if created_val <= 0:
+                        continue
+
+                    created_at = row.get('created_at')
+                    updated_at = row.get('updated_at') or row.get('created_at')
+
+                    if not created_at or not updated_at:
+                        continue
+
+                    try:
+                        date_created = datetime.strptime(str(created_at).split()[0], '%Y-%m-%d')
+                        date_updated = datetime.strptime(str(updated_at).split()[0], '%Y-%m-%d')
+                        days = (date_updated - date_created).days
+
+                        if days > 0:
+                            total_days_weighted += days * created_val
+                            total_weight += created_val
+                    except (ValueError, IndexError):
+                        continue
+
+                if total_weight > 0:
+                    avg_days = total_days_weighted / total_weight
+                else:
+                    avg_days = 365  # Default: assume 1 anno
+
+                if avg_days <= 0:
+                    avg_days = 365
+
+                # Calcola rendimento annualizzato
+                simple_return = (updated_total - created_total) / created_total
+                annualized_return = simple_return * (365.0 / avg_days) * 100.0
+
+                results[category] = round(annualized_return, 2)
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Errore calcolo rendimenti per categoria: {e}")
+            return {}
+
+    def calculate_aggregated_return_by_position(self) -> Dict[str, float]:
+        """
+        Calcola il rendimento aggregato per ogni posizione.
+
+        Usa l'approccio C: calcola direttamente da valori aggregati
+        Formula: ((somma_updated_total - somma_created_total) / somma_created_total) * (365 / giorni_medi) * 100
+
+        Returns:
+            Dict con posizione -> rendimento percentuale annualizzato
+        """
+        try:
+            df = self.get_current_assets_only()
+            if df.empty:
+                return {}
+
+            results = {}
+
+            # Filtra posizioni valide (non vuote)
+            df_filtered = df[df['position'].notna() & (df['position'] != '') & (df['position'] != 'NA')]
+
+            for position in df_filtered['position'].unique():
+                position_df = df_filtered[df_filtered['position'] == position]
+
+                # Somma i valori totali
+                created_total = position_df['created_total_value'].fillna(0).sum()
+                updated_total = position_df['updated_total_value'].fillna(position_df['created_total_value']).fillna(0).sum()
+
+                if created_total <= 0:
+                    results[position] = 0.0
+                    continue
+
+                # Calcola i giorni medi ponderati per valore
+                total_days_weighted = 0
+                total_weight = 0
+
+                for _, row in position_df.iterrows():
+                    created_val = row.get('created_total_value', 0) or 0
+                    if created_val <= 0:
+                        continue
+
+                    created_at = row.get('created_at')
+                    updated_at = row.get('updated_at') or row.get('created_at')
+
+                    if not created_at or not updated_at:
+                        continue
+
+                    try:
+                        date_created = datetime.strptime(str(created_at).split()[0], '%Y-%m-%d')
+                        date_updated = datetime.strptime(str(updated_at).split()[0], '%Y-%m-%d')
+                        days = (date_updated - date_created).days
+
+                        if days > 0:
+                            total_days_weighted += days * created_val
+                            total_weight += created_val
+                    except (ValueError, IndexError):
+                        continue
+
+                if total_weight > 0:
+                    avg_days = total_days_weighted / total_weight
+                else:
+                    avg_days = 365  # Default: assume 1 anno
+
+                if avg_days <= 0:
+                    avg_days = 365
+
+                # Calcola rendimento annualizzato
+                simple_return = (updated_total - created_total) / created_total
+                annualized_return = simple_return * (365.0 / avg_days) * 100.0
+
+                results[position] = round(annualized_return, 2)
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Errore calcolo rendimenti per posizione: {e}")
+            return {}
+
     def color_historical_records(self):
         """
         Colora i record storici di azzurro direttamente nel file Excel.
@@ -1111,38 +1478,38 @@ class PortfolioManager:
         except ImportError:
             self.logger.error("openpyxl non disponibile. Installa con: pip install openpyxl")
             return
-        
+
         try:
             # Carica tutti i dati per identificare i record storici
             df = self.load_data()
             if df.empty:
                 return
-            
+
             # Identifica gli asset correnti
             current_df = self.get_current_assets_only()
             current_ids = set(current_df['id'].astype(int))
-            
+
             # Record storici sono quelli non nell'insieme degli attuali
             historical_ids = set(df['id'].astype(int)) - current_ids
-            
+
             self.logger.info(f"Record storici da colorare: {len(historical_ids)}")
             self.logger.info(f"Record attuali: {len(current_ids)}")
-            
+
             # Apri il file Excel con openpyxl
             wb = load_workbook(self.excel_file)
             ws = wb.active
-            
+
             # Definisci il colore azzurro per il testo
             blue_font = Font(color="0066CC")  # Azzurro
-            
+
             # Itera sulle righe (skip header row 1)
             for row_idx in range(2, ws.max_row + 1):
                 # La colonna A contiene l'ID (primo valore)
                 id_cell = ws.cell(row=row_idx, column=1)
-                
+
                 try:
                     record_id = int(id_cell.value)
-                    
+
                     # Se è un record storico, colora tutta la riga di azzurro
                     if record_id in historical_ids:
                         for col_idx in range(1, ws.max_column + 1):
@@ -1151,11 +1518,11 @@ class PortfolioManager:
                 except (ValueError, TypeError):
                     # Se l'ID non è convertibile, skip
                     continue
-            
+
             # Salva il file
             wb.save(self.excel_file)
             self.logger.info(f"File Excel aggiornato con {len(historical_ids)} record storici colorati di azzurro")
-            
+
         except Exception as e:
             self.logger.error(f"Errore nella colorazione dei record storici: {e}")
             import traceback
