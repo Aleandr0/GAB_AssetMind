@@ -1121,8 +1121,13 @@ class ChartsUI(BaseUIComponent):
             
             # Formato valuta per le colonne dei valori
             from openpyxl.styles import NamedStyle
-            currency_style = NamedStyle(name="currency", number_format="€#,##0.00")
-            
+            # Verifica se lo stile esiste già per evitare warning di duplicazione
+            if "currency" not in wb.named_styles:
+                currency_style = NamedStyle(name="currency", number_format="€#,##0.00")
+                wb.add_named_style(currency_style)
+            else:
+                currency_style = wb.named_styles["currency"]
+
             for row in ws_debug.iter_rows(min_row=2, min_col=2):
                 for cell in row:
                     if cell.value and isinstance(cell.value, (int, float)):

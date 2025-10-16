@@ -993,39 +993,20 @@ class PortfolioManager:
                     # Riapplica font color a tutta la riga
                     if colors['fg']:
                         try:
-                            color_value = colors['fg']
-                            if isinstance(color_value, str):
-                                normalized_rgb = color_value.replace('#', '').upper()
-                            elif hasattr(color_value, 'rgb') and color_value.rgb:
-                                normalized_rgb = color_value.rgb.replace('#', '').upper()
-                            else:
-                                normalized_rgb = str(color_value).replace('#', '').upper()
-
-                            if len(normalized_rgb) >= 6:
-                                normalized_rgb = normalized_rgb[-6:]
-                            normalized_rgb = f"FF{normalized_rgb.zfill(6)}"
-
-                            font_color = Color(rgb=normalized_rgb)
-                            font = Font(color=font_color)
+                            # Normalizza RGB: estrai ultimi 6 caratteri ed aggiungi alpha channel
+                            rgb_str = str(colors['fg']).replace('#', '').upper()[-6:]
+                            font = Font(color=Color(rgb=f"FF{rgb_str.zfill(6)}"))
                             for col_idx in range(1, ws.max_column + 1):
                                 ws.cell(row=row_idx, column=col_idx).font = font
                         except Exception as color_exc:
-                            self.logger.warning(
-                                "Impossibile riapplicare il colore font per ID %s: %s",
-                                row_id,
-                                color_exc,
-                            )
+                            self.logger.warning(f"Impossibile riapplicare font color ID {row_id}: {color_exc}")
                     # Riapplica background fill
                     if colors['bg']:
                         try:
                             for col_idx in range(1, ws.max_column + 1):
                                 ws.cell(row=row_idx, column=col_idx).fill = colors['bg']
                         except Exception as fill_exc:
-                            self.logger.warning(
-                                "Impossibile riapplicare il fill per ID %s: %s",
-                                row_id,
-                                fill_exc,
-                            )
+                            self.logger.warning(f"Impossibile riapplicare fill ID {row_id}: {fill_exc}")
 
                     colors_reapplied += 1
 
