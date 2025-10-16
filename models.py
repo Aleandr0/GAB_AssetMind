@@ -1297,15 +1297,21 @@ class PortfolioManager:
         positions = df['position'].fillna('').unique()
         return [pos for pos in positions if pos != '']
     
-    def calculate_aggregated_return_by_category(self) -> Dict[str, float]:
+    def calculate_aggregated_return_by_category(self) -> Dict[str, Dict[str, Any]]:
         """
         Calcola il rendimento aggregato per ogni categoria.
 
-        Usa l'approccio C: calcola direttamente da valori aggregati
+        Usa l'approccio B: calcola direttamente da valori aggregati
         Formula: ((somma_updated_total - somma_created_total) / somma_created_total) * (365 / giorni_medi) * 100
 
         Returns:
-            Dict con categoria -> rendimento percentuale annualizzato
+            Dict con categoria -> {
+                'return_pct': float,
+                'total_invested': float,
+                'total_current': float,
+                'gain': float,
+                'avg_days': int
+            }
         """
         try:
             df = self.get_current_assets_only()
@@ -1362,8 +1368,15 @@ class PortfolioManager:
                 # Calcola rendimento annualizzato
                 simple_return = (updated_total - created_total) / created_total
                 annualized_return = simple_return * (365.0 / avg_days) * 100.0
+                gain = updated_total - created_total
 
-                results[category] = round(annualized_return, 2)
+                results[category] = {
+                    'return_pct': round(annualized_return, 2),
+                    'total_invested': round(created_total, 2),
+                    'total_current': round(updated_total, 2),
+                    'gain': round(gain, 2),
+                    'avg_days': int(avg_days)
+                }
 
             return results
 
@@ -1371,15 +1384,21 @@ class PortfolioManager:
             self.logger.error(f"Errore calcolo rendimenti per categoria: {e}")
             return {}
 
-    def calculate_aggregated_return_by_position(self) -> Dict[str, float]:
+    def calculate_aggregated_return_by_position(self) -> Dict[str, Dict[str, Any]]:
         """
         Calcola il rendimento aggregato per ogni posizione.
 
-        Usa l'approccio C: calcola direttamente da valori aggregati
+        Usa l'approccio B: calcola direttamente da valori aggregati
         Formula: ((somma_updated_total - somma_created_total) / somma_created_total) * (365 / giorni_medi) * 100
 
         Returns:
-            Dict con posizione -> rendimento percentuale annualizzato
+            Dict con posizione -> {
+                'return_pct': float,
+                'total_invested': float,
+                'total_current': float,
+                'gain': float,
+                'avg_days': int
+            }
         """
         try:
             df = self.get_current_assets_only()
@@ -1439,14 +1458,124 @@ class PortfolioManager:
                 # Calcola rendimento annualizzato
                 simple_return = (updated_total - created_total) / created_total
                 annualized_return = simple_return * (365.0 / avg_days) * 100.0
+                gain = updated_total - created_total
 
-                results[position] = round(annualized_return, 2)
+                results[position] = {
+                    'return_pct': round(annualized_return, 2),
+                    'total_invested': round(created_total, 2),
+                    'total_current': round(updated_total, 2),
+                    'gain': round(gain, 2),
+                    'avg_days': int(avg_days)
+                }
 
             return results
 
         except Exception as e:
             self.logger.error(f"Errore calcolo rendimenti per posizione: {e}")
             return {}
+
+    def calculate_aggregated_return_for_selection(self, df_selection: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Calcola il rendimento aggregato per una selezione arbitraria di asset dalla tabella Portfolio.
+
+        Usa l'approccio B: calcola direttamente da valori aggregati
+        Formula: ((somma_updated_total - somma_created_total) / somma_created_total) * (365 / giorni_medi) * 100
+
+        Args:
+            df_selection: DataFrame con gli asset selezionati dall'utente
+
+        Returns:
+            Dict con:
+                'return_pct': float,
+                'total_invested': float,
+                'total_current': float,
+                'gain': float,
+                'avg_days': int,
+                'count': int (numero asset selezionati)
+        """
+        try:
+            if df_selection.empty:
+                return {
+                    'return_pct': 0.0,
+                    'total_invested': 0.0,
+                    'total_current': 0.0,
+                    'gain': 0.0,
+                    'avg_days': 0,
+                    'count': 0
+                }
+
+            # Somma i valori totali
+            created_total = df_selection['created_total_value'].fillna(0).sum()
+            updated_total = df_selection['updated_total_value'].fillna(df_selection['created_total_value']).fillna(0).sum()
+
+            if created_total <= 0:
+                return {
+                    'return_pct': 0.0,
+                    'total_invested': round(created_total, 2),
+                    'total_current': round(updated_total, 2),
+                    'gain': 0.0,
+                    'avg_days': 0,
+                    'count': len(df_selection)
+                }
+
+            # Calcola i giorni medi ponderati per valore
+            total_days_weighted = 0
+            total_weight = 0
+
+            for _, row in df_selection.iterrows():
+                created_val = row.get('created_total_value', 0) or 0
+                if created_val <= 0:
+                    continue
+
+                created_at = row.get('created_at')
+                updated_at = row.get('updated_at') or row.get('created_at')
+
+                if not created_at or not updated_at:
+                    continue
+
+                try:
+                    date_created = datetime.strptime(str(created_at).split()[0], '%Y-%m-%d')
+                    date_updated = datetime.strptime(str(updated_at).split()[0], '%Y-%m-%d')
+                    days = (date_updated - date_created).days
+
+                    if days > 0:
+                        total_days_weighted += days * created_val
+                        total_weight += created_val
+                except (ValueError, IndexError):
+                    continue
+
+            if total_weight > 0:
+                avg_days = total_days_weighted / total_weight
+            else:
+                avg_days = 365  # Default: assume 1 anno
+
+            if avg_days <= 0:
+                avg_days = 365
+
+            # Calcola rendimento annualizzato
+            simple_return = (updated_total - created_total) / created_total
+            annualized_return = simple_return * (365.0 / avg_days) * 100.0
+            gain = updated_total - created_total
+
+            return {
+                'return_pct': round(annualized_return, 2),
+                'total_invested': round(created_total, 2),
+                'total_current': round(updated_total, 2),
+                'gain': round(gain, 2),
+                'avg_days': int(avg_days),
+                'count': len(df_selection)
+            }
+
+        except Exception as e:
+            self.logger.error(f"Errore calcolo rendimento selezione: {e}")
+            return {
+                'return_pct': 0.0,
+                'total_invested': 0.0,
+                'total_current': 0.0,
+                'gain': 0.0,
+                'avg_days': 0,
+                'count': 0
+            }
 
     def color_historical_records(self):
         """
