@@ -113,14 +113,14 @@ class RoadMapDashboard:
         panel_specs = [
             ("timeline", "Evoluzione temporale", "chart", "Evoluzione Temporale"),
             ("category", "Valore per categoria", "chart", "Distribuzione Valore per Categoria"),
-            ("risk", "Distribuzione rischio", "chart", "Distribuzione Rischio"),
-            ("performance", "Performance per categoria", "chart", "Performance per Categoria"),
             ("position", "Asset per posizione", "chart", "Suddivisione Asset per Posizione"),
-            ("returns", "Rendimenti (anteprima)", "table", None),
+            ("performance", "Performance per categoria", "chart", "Performance per Categoria"),
+            ("risk", "Distribuzione rischio", "chart", "Distribuzione Rischio"),
+            ("returns", "Analisi Rendimenti", "analisi_rendimenti", "Analisi Rendimenti"),
         ]
 
         for index, (key, title, panel_type, chart_name) in enumerate(panel_specs):
-            target_page = "Grafici" if panel_type == "chart" else "Portfolio"
+            target_page = "Grafici" if panel_type in ["chart", "analisi_rendimenti"] else "Portfolio"
             row, col = divmod(index, 3)
             frame = ctk.CTkFrame(grid, corner_radius=16, fg_color="#ffffff")
             frame.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
@@ -140,8 +140,99 @@ class RoadMapDashboard:
                 self.chart_objects[key] = {"figure": fig, "axis": ax, "canvas": canvas}
                 self._make_clickable(frame, target_page, chart_name)
                 self._make_clickable(widget, target_page, chart_name)
+            elif panel_type == "analisi_rendimenti":
+                # Card speciale per Analisi Rendimenti
+                self._build_analisi_rendimenti_card(frame, target_page, chart_name)
             else:
                 self._build_returns_table(frame)
+
+    def _build_analisi_rendimenti_card(self, frame: ctk.CTkFrame, target_page: str, chart_name: str) -> None:
+        """Crea una card compatta per Analisi Rendimenti nella RoadMap"""
+        container = ctk.CTkFrame(frame, fg_color="#fef3c7")
+        container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        container.grid_columnconfigure(0, weight=1)
+
+        # Rendi tutta la card cliccabile
+        self._make_clickable(frame, target_page, chart_name)
+        self._make_clickable(container, target_page, chart_name)
+
+        # Titolo più compatto
+        title = ctk.CTkLabel(
+            container,
+            text="📈 Analisi Rendimenti",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#0f172a"
+        )
+        title.pack(padx=12, pady=(8, 2), anchor="w")
+        self._make_clickable(title, target_page, chart_name)
+
+        # Frame Portfolio Complessivo (più compatto)
+        portfolio_frame = ctk.CTkFrame(container, fg_color="#e0f2fe", corner_radius=4)
+        portfolio_frame.pack(fill="x", padx=12, pady=(0, 3))
+        self._make_clickable(portfolio_frame, target_page, chart_name)
+
+        portfolio_title = ctk.CTkLabel(
+            portfolio_frame,
+            text="💼 Portfolio",
+            font=ctk.CTkFont(size=8, weight="bold"),
+            text_color="#0369a1"
+        )
+        portfolio_title.pack(padx=6, pady=(3, 0), anchor="w")
+        self._make_clickable(portfolio_title, target_page, chart_name)
+
+        self.rendimento_portfolio_label = ctk.CTkLabel(
+            portfolio_frame,
+            text="0.00%",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#16a34a"
+        )
+        self.rendimento_portfolio_label.pack(padx=6, pady=(0, 3), anchor="w")
+        self._make_clickable(self.rendimento_portfolio_label, target_page, chart_name)
+
+        # Frame Selezione (inizialmente nascosto, più compatto)
+        self.selezione_frame_roadmap = ctk.CTkFrame(container, fg_color="#fef9c3", corner_radius=4)
+        # Pack will be called dynamically when there's a selection
+        self._make_clickable(self.selezione_frame_roadmap, target_page, chart_name)
+
+        selezione_title = ctk.CTkLabel(
+            self.selezione_frame_roadmap,
+            text="🎯 Selezione",
+            font=ctk.CTkFont(size=8, weight="bold"),
+            text_color="#a16207"
+        )
+        selezione_title.pack(padx=6, pady=(3, 0), anchor="w")
+        self._make_clickable(selezione_title, target_page, chart_name)
+
+        # Label descrizione selezione (più piccola)
+        self.selezione_desc_label = ctk.CTkLabel(
+            self.selezione_frame_roadmap,
+            text="",
+            font=ctk.CTkFont(size=7),
+            text_color="#78716c",
+            justify="left",
+            wraplength=280
+        )
+        self.selezione_desc_label.pack(padx=6, pady=(0, 1), anchor="w", fill="x")
+        self._make_clickable(self.selezione_desc_label, target_page, chart_name)
+
+        self.rendimento_selezione_label = ctk.CTkLabel(
+            self.selezione_frame_roadmap,
+            text="0.00%",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#16a34a"
+        )
+        self.rendimento_selezione_label.pack(padx=6, pady=(0, 3), anchor="w")
+        self._make_clickable(self.rendimento_selezione_label, target_page, chart_name)
+
+        # Call to action più piccolo
+        cta = ctk.CTkLabel(
+            container,
+            text="→ Clicca per dettagli",
+            font=ctk.CTkFont(size=8),
+            text_color="#1d4ed8"
+        )
+        cta.pack(padx=12, pady=(4, 8), anchor="w")
+        self._make_clickable(cta, target_page, chart_name)
 
     def _build_returns_table(self, frame: ctk.CTkFrame) -> None:
         table = ctk.CTkFrame(frame, fg_color="#f8fafc")
@@ -218,6 +309,7 @@ class RoadMapDashboard:
         self._render_risk_distribution(dataframe)
         self._render_performance(dataframe)
         self._render_position_distribution(dataframe)
+        self._update_analisi_rendimenti_preview(dataframe, filter_state)
         self._update_returns_preview(dataframe)
 
     def set_portfolio_manager(self, portfolio_manager) -> None:
@@ -371,6 +463,92 @@ class RoadMapDashboard:
             self.charts_ui._create_position_distribution_chart(df, ax=chart["axis"])
         except Exception as e:
             print(f"Errore rendering position: {e}")
+
+    # ------------------------------------------------------------------
+    # Analisi Rendimenti
+    # ------------------------------------------------------------------
+    def _update_analisi_rendimenti_preview(self, dataframe: Optional[pd.DataFrame], filter_state: Optional[Dict[str, Any]] = None) -> None:
+        """Aggiorna la card Analisi Rendimenti nella RoadMap con Portfolio e Selezione"""
+        if not hasattr(self, 'rendimento_portfolio_label') or not self.rendimento_portfolio_label:
+            return
+
+        # SEMPRE calcola rendimento portfolio complessivo (TUTTI gli asset)
+        try:
+            df_completo = self.portfolio_manager.get_current_assets_only()
+
+            if df_completo.empty:
+                self.rendimento_portfolio_label.configure(text="0.00%", text_color="#64748b")
+            else:
+                rendimento = self._calcola_rendimento_aggregato(df_completo)
+                color = "#16a34a" if rendimento >= 0 else "#dc2626"
+                self.rendimento_portfolio_label.configure(
+                    text=f"{rendimento:.2f}%",
+                    text_color=color
+                )
+
+        except Exception as e:
+            print(f"Errore aggiornamento rendimento portfolio: {e}")
+            self.rendimento_portfolio_label.configure(text="N/A", text_color="#64748b")
+
+        # Gestione Selezione
+        has_filters = False
+        if filter_state and filter_state.get('column_filters'):
+            col_filters = filter_state['column_filters']
+            has_filters = any(bool(values) for values in col_filters.values())
+
+        if not has_filters:
+            # Nascondi frame selezione se non ci sono filtri
+            if hasattr(self, 'selezione_frame_roadmap'):
+                self.selezione_frame_roadmap.pack_forget()
+        else:
+            # Mostra frame selezione (con padding ridotto)
+            if hasattr(self, 'selezione_frame_roadmap'):
+                self.selezione_frame_roadmap.pack(fill="x", padx=12, pady=(0, 3))
+
+                # Formatta descrizione filtri COMPLETA
+                from config import FieldMapping
+                parts = []
+                for col, values in col_filters.items():
+                    disp = FieldMapping.DB_TO_DISPLAY.get(col, col)
+                    vals = list(sorted({str(v) for v in values}))  # TUTTI i valori
+                    shown = ', '.join(vals)
+                    parts.append(f"{disp}: {shown}")
+
+                desc_text = " | ".join(parts)
+                self.selezione_desc_label.configure(text=desc_text)
+
+                # Calcola rendimento selezione
+                if dataframe is not None and not dataframe.empty:
+                    try:
+                        rendimento_sel = self._calcola_rendimento_aggregato(dataframe)
+                        color = "#16a34a" if rendimento_sel >= 0 else "#dc2626"
+                        self.rendimento_selezione_label.configure(
+                            text=f"{rendimento_sel:.2f}%",
+                            text_color=color
+                        )
+                    except Exception as e:
+                        print(f"Errore calcolo rendimento selezione: {e}")
+                        self.rendimento_selezione_label.configure(text="N/A", text_color="#64748b")
+
+    def _calcola_rendimento_aggregato(self, df: pd.DataFrame) -> float:
+        """Calcola rendimento aggregato ponderato per valore"""
+        valore_corrente_totale = df['updated_total_value'].fillna(df['created_total_value']).fillna(0).sum()
+
+        if valore_corrente_totale <= 0:
+            return 0.0
+
+        rendimento_aggregato = 0.0
+        for _, asset in df.iterrows():
+            peso = asset['updated_total_value'] if pd.notna(asset['updated_total_value']) else asset['created_total_value']
+            peso = peso if pd.notna(peso) else 0
+            peso = peso / valore_corrente_totale if valore_corrente_totale > 0 else 0
+
+            rend_asset = asset.get('return_percentage', 0)
+            rend_asset = rend_asset if pd.notna(rend_asset) else 0
+
+            rendimento_aggregato += peso * rend_asset
+
+        return rendimento_aggregato
 
     # ------------------------------------------------------------------
     # Tabella rendimenti

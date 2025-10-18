@@ -33,7 +33,7 @@ class UIConfig:
     # Dimensioni bottoni standardizzate
     BUTTON_SIZES = {
         'small': {'width': 100, 'height': 30},
-        'medium': {'width': 120, 'height': 32},
+        'medium': {'width': 95, 'height': 32},  # Ridotto da 120 a 95 per Portfolio
         'large': {'width': 140, 'height': 40},
         'compact': {'width': 110, 'height': 32}
     }
@@ -60,7 +60,7 @@ class FieldMapping:
     # Mappatura nomi colonne display -> database
     DISPLAY_TO_DB = {
         "ID": "id",
-        "Category": "category", 
+        "Category": "category",
         "Position": "position",
         "Asset Name": "asset_name",
         "ISIN": "isin",
@@ -68,7 +68,7 @@ class FieldMapping:
         "Risk Level": "risk_level",
         "Created At": "created_at",
         "Created Amount": "created_amount",
-        "Created Unit Price": "created_unit_price", 
+        "Created Unit Price": "created_unit_price",
         "Created Total Value": "created_total_value",
         "Updated At": "updated_at",
         "Updated Amount": "updated_amount",
@@ -78,7 +78,8 @@ class FieldMapping:
         "Accumulation Amount": "accumulation_amount",
         "Income Per Year": "income_per_year",
         "Rental Income": "rental_income",
-        "Note": "note"
+        "Note": "note",
+        "Return %": "return_percentage"
     }
     
     # Mappatura inversa database -> display  
@@ -110,7 +111,19 @@ class AssetConfig:
     
     # Livelli di rischio
     RISK_LEVELS = ["1", "2", "3", "4", "5"]
-    
+
+    # Frequenze PAC (Piano di Accumulo)
+    PAC_FREQUENCIES = [
+        "Settimanale",
+        "Quindicinale",
+        "Mensile",
+        "Trimestrale",
+        "Semestrale",
+        "Annuale",
+        "Unico",
+        "Sospeso"
+    ]
+
     # Categorie che richiedono identificativi completi per i dati di mercato
     MARKET_IDENTIFIER_CATEGORIES = {
         "ETF", "Azioni", "Fondi di investimento", "PAC", "Criptovalute"
@@ -153,7 +166,8 @@ class DatabaseConfig:
         'id', 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
         'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
         'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
-        'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
+        'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note',
+        'return_percentage'
     ]
 
 class ValidationConfig:

@@ -901,58 +901,64 @@ class ExportUI(BaseUIComponent):
                     # Headers con nomi display
                     col_labels = [FieldMapping.DB_TO_DISPLAY.get(c, c.replace('_', ' ').title()) for c in detail_df.columns]
 
-                    # Larghezze colonne ottimizzate (proporzioni relative)
+                    # Larghezze colonne ottimizzate (valori assoluti normalizzati)
                     col_widths = {
-                        'id': 0.4,
-                        'category': 0.8,
-                        'position': 0.8,
-                        'asset_name': 2.5,  # Molto spazio
-                        'isin': 1.0,
-                        'ticker': 0.6,
-                        'risk_level': 0.4,
-                        'created_at': 0.7,
-                        'created_amount': 0.7,
-                        'created_unit_price': 0.7,
-                        'created_total_value': 0.8,
-                        'updated_at': 0.7,
-                        'updated_amount': 0.7,
-                        'updated_unit_price': 0.7,
-                        'updated_total_value': 0.8,
-                        'accumulation_plan': 0.5,
-                        'accumulation_amount': 0.7,
-                        'income_per_year': 0.7,
-                        'rental_income': 0.7,
-                        'note': 2.0  # Molto spazio
+                        'id': 0.02,
+                        'category': 0.05,
+                        'position': 0.06,
+                        'asset_name': 0.12,  # Spazio generoso
+                        'isin': 0.06,
+                        'ticker': 0.04,
+                        'risk_level': 0.02,
+                        'created_at': 0.04,
+                        'created_amount': 0.04,
+                        'created_unit_price': 0.04,
+                        'created_total_value': 0.05,
+                        'updated_at': 0.04,
+                        'updated_amount': 0.04,
+                        'updated_unit_price': 0.04,
+                        'updated_total_value': 0.05,
+                        'accumulation_plan': 0.03,
+                        'accumulation_amount': 0.04,
+                        'income_per_year': 0.04,
+                        'rental_income': 0.04,
+                        'note': 0.10  # Spazio generoso
                     }
-                    widths = [col_widths.get(c, 0.8) for c in detail_df.columns]
+                    widths = [col_widths.get(c, 0.04) for c in detail_df.columns]
 
                     rows_per_page = 22
                     total_rows = len(detail_df)
                     for start in range(0, total_rows, rows_per_page):
                         chunk = detail_df.iloc[start:start+rows_per_page]
 
-                        # A3 Landscape con margini ridotti (0.5 cm)
+                        # A3 Landscape: 16.54 x 11.69 inches
                         fig = plt.figure(figsize=(16.54, 11.69))
-                        # Margini: 0.5cm = ~0.197 inches, usiamo valori normalizzati
-                        ax = fig.add_axes([0.012, 0.05, 0.976, 0.90])
-                        ax.axis('off')
-                        ax.set_title("Dettaglio Asset (selezione)", fontsize=14, fontweight='bold', pad=10, loc='left')
 
+                        # Margini 0.5cm: 0.5/42=0.012 (horiz), 0.5/29.7=0.017 (vert)
+                        # axes position: [left, bottom, width, height] in figure coordinates
+                        ax = fig.add_axes([0.012, 0.017, 0.976, 0.966])
+                        ax.axis('off')
+
+                        # Titolo posizionato dentro i margini
+                        fig.text(0.012, 0.97, "Dettaglio Asset (selezione)",
+                                fontsize=12, fontweight='bold', va='top')
+
+                        # Tabella occupa tutto lo spazio degli axes
                         tbl = ax.table(cellText=chunk.values,
                                        colLabels=col_labels,
                                        colWidths=widths,
-                                       loc='center',
-                                       cellLoc='left')
+                                       loc='upper left',
+                                       cellLoc='left',
+                                       bbox=[0, 0, 1.0, 0.93])
                         tbl.auto_set_font_size(False)
-                        tbl.set_fontsize(5.5)
-                        tbl.scale(1, 2.2)  # Più altezza per word wrap
+                        tbl.set_fontsize(6.5)  # +30%: 5 * 1.3 = 6.5
+                        tbl.scale(1, 2.0)
 
                         # Stile e word wrap
                         for (i, j), cell in tbl.get_celld().items():
                             if i == 0:  # Header
                                 cell.set_facecolor('#4472C4')
-                                cell.set_text_props(weight='bold', color='white', fontsize=5.5)
-                                cell.set_height(0.04)
+                                cell.set_text_props(weight='bold', color='white', fontsize=6.5)
                             else:
                                 # Alterna colori
                                 if i % 2 == 0:
@@ -964,21 +970,20 @@ class ExportUI(BaseUIComponent):
                                 text = cell.get_text().get_text()
                                 col_name = detail_df.columns[j]
 
-                                if col_name == 'asset_name' and len(text) > 35:
-                                    wrapped = textwrap.fill(text, width=35, break_long_words=False)
+                                if col_name == 'asset_name' and len(text) > 25:
+                                    wrapped = textwrap.fill(text, width=25, break_long_words=False)
                                     cell.get_text().set_text(wrapped)
-                                elif col_name == 'note' and len(text) > 40:
-                                    wrapped = textwrap.fill(text, width=40, break_long_words=False)
+                                elif col_name == 'note' and len(text) > 25:
+                                    wrapped = textwrap.fill(text, width=25, break_long_words=True, break_on_hyphens=True)
                                     cell.get_text().set_text(wrapped)
-                                elif col_name in ['position', 'isin'] and len(text) > 20:
-                                    wrapped = textwrap.fill(text, width=20, break_long_words=False)
+                                elif col_name in ['position'] and len(text) > 15:
+                                    wrapped = textwrap.fill(text, width=15, break_long_words=False)
                                     cell.get_text().set_text(wrapped)
 
-                                cell.set_text_props(fontsize=5.5)
-                                cell.set_height(0.045)
+                                cell.set_text_props(fontsize=6.5)
 
                         _pdf_header_footer(fig, page_num)
-                        pdf.savefig(fig, dpi=150, bbox_inches='tight', pad_inches=0.1)
+                        pdf.savefig(fig, dpi=150)
                         plt.close(fig)
                         page_num += 1
                 except Exception as e:

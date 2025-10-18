@@ -661,15 +661,18 @@ class GABAssetMind:
                         manual_issue_ids.append(parsed_id)
                     elif alert_type == 'price_alert':
                         price_alert_ids.append(parsed_id)
-            if self.portfolio_table and hasattr(self.portfolio_table, 'mark_alert_rows'):
+            # Scrivi le evidenziazioni rosse nel file Excel
+            if nav_issue_ids or manual_issue_ids or price_alert_ids:
                 try:
-                    self.portfolio_table.mark_alert_rows(
+                    self._write_alert_colors_to_excel(
                         nav_issue_ids=nav_issue_ids,
                         manual_issue_ids=manual_issue_ids,
                         price_alert_ids=price_alert_ids,
                     )
+                    # Ricarica la tabella per mostrare i nuovi colori
+                    self._load_portfolio_data()
                 except Exception as exc:
-                    self.logger.warning("Impossibile applicare l'evidenziazione degli alert: %s", exc)
+                    self.logger.warning("Impossibile scrivere evidenziazioni alert in Excel: %s", exc)
 
             message_lines = [f"Asset aggiornati: {updated}"]
             if skipped:
@@ -709,6 +712,50 @@ class GABAssetMind:
                     self.root.after(0, lambda: finalize(result, error))
     
         threading.Thread(target=run_update, daemon=True).start()
+
+    def _write_alert_colors_to_excel(
+        self,
+        nav_issue_ids: List[int],
+        manual_issue_ids: List[int],
+        price_alert_ids: List[int]
+    ) -> None:
+        """Scrive i colori di evidenziazione rossi nel file Excel per gli alert"""
+        from openpyxl import load_workbook
+        from openpyxl.styles import PatternFill
+
+        # Unisci tutti gli ID che devono avere sfondo rosso
+        all_alert_ids = set(nav_issue_ids + manual_issue_ids + price_alert_ids)
+
+        if not all_alert_ids:
+            return
+
+        try:
+            wb = load_workbook(self.portfolio_manager.excel_file)
+            ws = wb.active
+
+            # Colore rosso chiaro per gli alert (stesso usato prima nei tag)
+            red_fill = PatternFill(start_color='FFE5E5', end_color='FFE5E5', fill_type='solid')
+
+            # Applica sfondo rosso a tutte le celle delle righe con alert
+            for row_idx in range(2, ws.max_row + 1):
+                id_cell = ws.cell(row=row_idx, column=1)
+                try:
+                    row_id = int(id_cell.value)
+                except (TypeError, ValueError):
+                    continue
+
+                if row_id in all_alert_ids:
+                    # Colora tutte le celle della riga
+                    for col_idx in range(1, ws.max_column + 1):
+                        ws.cell(row=row_idx, column=col_idx).fill = red_fill
+
+            wb.save(self.portfolio_manager.excel_file)
+            wb.close()
+            self.logger.info(f"Scritti colori alert nel file Excel per {len(all_alert_ids)} righe")
+
+        except Exception as e:
+            self.logger.error(f"Errore scrittura colori alert in Excel: {e}")
+            raise
 
     def _generate_update_recommendations(self, errors: list, alerts: list, skipped: list, details: list = None) -> List[str]:
         """Genera raccomandazioni per migliorare futuri aggiornamenti prezzi."""

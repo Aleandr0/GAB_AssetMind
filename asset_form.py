@@ -267,7 +267,8 @@ class AssetForm(BaseUIComponent):
             ("Updated Amount", "updated_amount", None),
             ("Updated Unit Price (€)", "updated_unit_price", None),
             ("Updated Total Value (auto) (€)", "updated_total_value", None),
-            ("Accumulation Plan", "accumulation_plan", None),
+            ("Return % (auto)", "return_percentage", None),
+            ("Accumulation Plan", "accumulation_plan", AssetConfig.PAC_FREQUENCIES),
             ("Accumulation Amount (€)", "accumulation_amount", None),
             ("Income Per Year (€)", "income_per_year", None),
             ("Rental Income (€)", "rental_income", None),
@@ -592,11 +593,14 @@ class AssetForm(BaseUIComponent):
                 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
                 'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
                 'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
-                'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
+                'return_percentage', 'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
             ]
             
+            nan_tokens = {'nan', 'none', 'null', 'na', 'n/a'}
+
             for field in all_fields:
-                value = self.form_vars[field].get().strip()
+                raw_value = self.form_vars[field].get()
+                value = raw_value.strip() if raw_value else ""
                 
                 # Risk level è intero
                 if field == 'risk_level':
@@ -606,19 +610,22 @@ class AssetForm(BaseUIComponent):
                         data[field] = 1
                 
                 # Campi numerici float
-                elif field in ['created_amount', 'updated_amount', 
+                elif field in ['created_amount', 'updated_amount',
                              'created_unit_price', 'updated_unit_price', 'created_total_value', 'updated_total_value',
-                             'accumulation_amount', 'income_per_year', 'rental_income']:
+                             'return_percentage', 'accumulation_amount', 'income_per_year', 'rental_income']:
                     try:
                         # Pulizia semplice per numerici
-                        cleaned = value.replace('€', '').replace(',', '').strip()
-                        data[field] = float(cleaned) if cleaned else 0.0
+                        cleaned = value.replace('€', '').replace(',', '').replace('%', '').strip()
+                        if not cleaned or cleaned.lower() in nan_tokens:
+                            data[field] = 0.0
+                        else:
+                            data[field] = float(cleaned)
                     except ValueError:
                         data[field] = 0.0
                 
                 # Tutti gli altri campi: copia diretta
                 else:
-                    data[field] = value if value else ""
+                    data[field] = "" if not value or value.lower() in nan_tokens else value
             
             return data
             
@@ -677,7 +684,7 @@ class AssetForm(BaseUIComponent):
         # Mappa diretta asset -> form (conversione sicura senza validazioni complesse)
         field_values = {
             'category': safe_str(asset.category),
-            'asset_name': safe_str(asset.asset_name), 
+            'asset_name': safe_str(asset.asset_name),
             'position': safe_str(asset.position),
             'risk_level': str(asset.risk_level) if asset.risk_level and asset.risk_level != 0 else "1",
             'ticker': safe_str(asset.ticker),
@@ -690,6 +697,7 @@ class AssetForm(BaseUIComponent):
             'updated_amount': str(asset.updated_amount) if asset.updated_amount is not None and asset.updated_amount != 0 else "",
             'updated_unit_price': str(asset.updated_unit_price) if asset.updated_unit_price is not None and asset.updated_unit_price != 0 else "",
             'updated_total_value': str(asset.updated_total_value) if asset.updated_total_value is not None and asset.updated_total_value != 0 else "",
+            'return_percentage': f"{asset.return_percentage:.2f}%" if hasattr(asset, 'return_percentage') and asset.return_percentage != 0 else "0.00%",
             'accumulation_plan': safe_str(asset.accumulation_plan),
             'accumulation_amount': str(asset.accumulation_amount) if asset.accumulation_amount is not None and asset.accumulation_amount != 0 else "",
             'income_per_year': str(asset.income_per_year) if asset.income_per_year is not None and asset.income_per_year != 0 else "",

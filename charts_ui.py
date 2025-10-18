@@ -20,6 +20,7 @@ from ui_components import BaseUIComponent
 from logging_config import get_logger
 from date_utils import get_date_manager
 from typing import Optional, Dict, Any
+from analisi_rendimenti_ui import AnalisiRendimentiUI
 
 class ChartsUI(BaseUIComponent):
     """Componente per la visualizzazione di grafici e analytics"""
@@ -36,6 +37,7 @@ class ChartsUI(BaseUIComponent):
         self.end_year = None
         self.available_years = []
         self.logger = get_logger('ChartsUI')
+        self.analisi_rendimenti_ui = None  # Sarà inizializzato in create_charts_interface
 
         # Configurazione matplotlib per CustomTkinter
         plt.style.use('default')
@@ -56,9 +58,9 @@ class ChartsUI(BaseUIComponent):
         
         self._create_controls()
         self._create_chart_area()
-        
+
         # Carica il grafico di default
-        self.chart_type.set("Distribuzione Valore per Categoria")
+        self.chart_type.set("Evoluzione Temporale")
         self._update_chart()
 
         return self.charts_frame
@@ -78,11 +80,12 @@ class ChartsUI(BaseUIComponent):
 
         # Dropdown selezione grafico
         chart_types = [
-            "Distribuzione Valore per Categoria",
-            "Distribuzione Rischio",
-            "Performance per Categoria",
             "Evoluzione Temporale",
-            "Suddivisione Asset per Posizione"
+            "Valore per Categoria",
+            "Valore per Posizione",
+            "Performance per Categoria",
+            "Distribuzione Rischio",
+            "Analisi Rendimenti"
         ]
         self.available_chart_types = chart_types
 
@@ -99,14 +102,14 @@ class ChartsUI(BaseUIComponent):
         chart_selector.pack(side="left", padx=20, pady=15)
 
         # Label filtri attivi (multilinea con wrapping)
-        # Riduce font del 30%: se font base è 12, diventa 8.4 ≈ 8
+        # Aumentato del 100%: 0.7 * 2 = 1.4, quindi 12 * 1.4 = 16.8
         base_size = UIConfig.FONTS['text'].get('size', 12)
-        reduced_size = int(base_size * 0.7)
+        increased_size = int(base_size * 1.4)
 
         self.filter_label = ctk.CTkLabel(
             self.controls_frame,
             text="",
-            font=ctk.CTkFont(family=UIConfig.FONTS['text'].get('family', 'Arial'), size=reduced_size),
+            font=ctk.CTkFont(family=UIConfig.FONTS['text'].get('family', 'Arial'), size=increased_size),
             text_color=UIConfig.COLORS['secondary'],
             justify="left",
             wraplength=600  # Larghezza massima prima di andare a capo
@@ -158,6 +161,9 @@ class ChartsUI(BaseUIComponent):
         """Crea l'area per la visualizzazione dei grafici"""
         self.chart_frame = ctk.CTkFrame(self.charts_frame)
         self.chart_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Analisi Rendimenti UI sarà inizializzato quando necessario (lazy loading)
+        self.analisi_rendimenti_frame = None
     
     def _on_chart_type_changed(self, selected_type: str):
         """Gestisce il cambio di tipo di grafico"""
@@ -232,10 +238,52 @@ class ChartsUI(BaseUIComponent):
     
     def _update_chart(self):
         """Aggiorna il grafico corrente"""
-        # Pulisce il grafico precedente
+        # Ottieni tipo grafico selezionato
+        chart_type = self.chart_type.get()
+
+        # Gestione speciale per Analisi Rendimenti
+        if chart_type == "Analisi Rendimenti":
+            # Inizializza lazy il componente se non esiste
+            if self.analisi_rendimenti_frame is None:
+                try:
+                    self.analisi_rendimenti_ui = AnalisiRendimentiUI(self.chart_frame, self.portfolio_manager)
+                    self.analisi_rendimenti_frame = self.analisi_rendimenti_ui.create_analisi_interface()
+                    self.logger.debug("Analisi Rendimenti UI inizializzato")
+                except Exception as e:
+                    import traceback
+                    self.logger.error(f"Errore inizializzazione Analisi Rendimenti: {e}")
+                    self.logger.error(f"Traceback completo: {traceback.format_exc()}")
+                    self._show_error_message(f"Errore caricamento Analisi Rendimenti: {e}")
+                    return
+
+            # Nascondi tutti gli altri widget del chart_frame
+            for widget in self.chart_frame.winfo_children():
+                if widget != self.analisi_rendimenti_frame:
+                    widget.pack_forget()
+
+            # Mostra il frame Analisi Rendimenti
+            self.analisi_rendimenti_frame.pack(fill="both", expand=True)
+
+            # Aggiorna i dati
+            if self.analisi_rendimenti_ui:
+                if isinstance(self._external_filtered_df, pd.DataFrame) and not self._external_filtered_df.empty:
+                    self.analisi_rendimenti_ui.refresh_with_filtered_data(
+                        self._external_filtered_df,
+                        self._filter_info if hasattr(self, '_filter_info') else None
+                    )
+                else:
+                    self.analisi_rendimenti_ui.refresh_analisi()
+            return
+
+        # Per tutti gli altri grafici, nascondi Analisi Rendimenti
+        if self.analisi_rendimenti_frame:
+            self.analisi_rendimenti_frame.pack_forget()
+
+        # Pulisce gli altri grafici
         for widget in self.chart_frame.winfo_children():
-            safe_execute(lambda: widget.destroy())
-        
+            if widget != self.analisi_rendimenti_frame:
+                safe_execute(lambda w=widget: w.destroy())
+
         try:
             # Aggiorna label filtri nei controlli
             self._update_filter_label()
@@ -244,15 +292,13 @@ class ChartsUI(BaseUIComponent):
                 df = self._external_filtered_df.copy()
             else:
                 df = self.portfolio_manager.get_current_assets_only()
-            
+
             if df.empty:
                 self._show_no_data_message()
                 return
-            
+
             # Crea il grafico in base al tipo selezionato
-            chart_type = self.chart_type.get()
-            
-            if chart_type == "Distribuzione Valore per Categoria":
+            if chart_type == "Valore per Categoria":
                 self._create_value_distribution_chart(df)
             elif chart_type == "Distribuzione Rischio":
                 self._create_risk_distribution_chart(df)
@@ -260,9 +306,9 @@ class ChartsUI(BaseUIComponent):
                 self._create_performance_chart(df)
             elif chart_type == "Evoluzione Temporale":
                 self._create_temporal_chart(df)
-            elif chart_type == "Suddivisione Asset per Posizione":
+            elif chart_type == "Valore per Posizione":
                 self._create_position_distribution_chart(df)
-            
+
         except Exception as e:
             self._show_error_message(f"Errore nella creazione del grafico: {e}")
     
@@ -387,18 +433,20 @@ class ChartsUI(BaseUIComponent):
                             y=0.92, x=0.5)
 
                 # Legenda compatta e leggibile a destra
+                # Fontsize aumentato del 25%: 8.4 * 1.25 = 10.5
                 ax.legend(wedges, legend_labels,
                          loc="center left", bbox_to_anchor=(1.0, 0.5),
-                         fontsize=8.4, frameon=True, borderaxespad=0)
+                         fontsize=10.5, frameon=True, borderaxespad=0)
             else:
                 # Titolo per modalità estesa
                 ax.set_title("Valore per Categoria",
                             fontsize=14, fontweight='bold', pad=20)
 
                 # Legenda estesa
+                # Fontsize aumentato del 50%: 10 * 1.5 = 15
                 ax.legend(wedges, legend_labels, title="Categorie",
                          loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1),
-                         fontsize=10, frameon=True)
+                         fontsize=15, frameon=True)
 
             # Mostra il grafico solo se non è un asse esterno
             if not external_ax:
@@ -911,7 +959,16 @@ class ChartsUI(BaseUIComponent):
             
             # Griglia e legenda
             ax.grid(True, alpha=0.3)
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+            # Posiziona la legenda in base alla modalità
+            if external_ax:
+                # Modalità compatta (RoadMap): legenda sovrapposta in alto a sinistra
+                # Fontsize aumentato del 50%: 8 * 1.5 = 12
+                ax.legend(loc='upper left', fontsize=12, framealpha=0.9, edgecolor='gray')
+            else:
+                # Modalità estesa (pagina Grafici): legenda sovrapposta in alto a sinistra
+                # Fontsize raddoppiato: 12 * 2 = 24
+                ax.legend(loc='upper left', fontsize=24, framealpha=0.9, edgecolor='gray')
 
             # Mostra il grafico solo se non è un asse esterno
             if not external_ax:
@@ -961,7 +1018,8 @@ class ChartsUI(BaseUIComponent):
 
             # Crea il grafico
             if ax is None:
-                fig, ax = plt.subplots(figsize=(10, 8))
+                # Dimensioni aumentate del 70%: 10*1.7=17, 8*1.7=13.6
+                fig, ax = plt.subplots(figsize=(17, 13.6))
                 external_ax = False
             else:
                 fig = ax.figure
@@ -1048,18 +1106,21 @@ class ChartsUI(BaseUIComponent):
                             y=0.92, x=0.5)
 
                 # Legenda compatta e leggibile a destra
+                # Fontsize aumentato del 25%: 8.4 * 1.25 = 10.5
                 ax.legend(wedges, legend_labels,
                          loc="center left", bbox_to_anchor=(1.0, 0.5),
-                         fontsize=8.4, frameon=True, borderaxespad=0)
+                         fontsize=10.5, frameon=True, borderaxespad=0)
             else:
                 # Titolo per modalità estesa
                 ax.set_title("Valore per Posizione",
                             fontsize=14, fontweight='bold', pad=20)
 
                 # Legenda estesa
+                # Fontsize aumentato del 50%: 10 * 1.5 = 15
+                # bbox_to_anchor spostato più a destra: 1.15 → 1.25
                 ax.legend(wedges, legend_labels, title="Posizioni",
-                         loc="center left", bbox_to_anchor=(1.15, 0, 0.5, 1),
-                         fontsize=10, frameon=True)
+                         loc="center left", bbox_to_anchor=(1.25, 0, 0.5, 1),
+                         fontsize=15, frameon=True)
 
             plt.tight_layout()
 

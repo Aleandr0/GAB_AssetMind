@@ -146,7 +146,7 @@ class NavigationBar(BaseUIComponent):
             ("RoadMap AssetMind", "RoadMap"),
             ("Portfolio", "Portfolio"),
             ("Asset", "Asset"),
-            ("Grafici", "Grafici"),
+            ("Grafici e Analisi", "Grafici"),
             ("Export", "Export"),
         ]
         for text, page in nav_buttons:
