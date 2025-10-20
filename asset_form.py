@@ -366,18 +366,18 @@ class AssetForm(BaseUIComponent):
         for field_key, widget in self.form_widgets.items():
             if field_key in relevant_fields:
                 # Campo rilevante - abilita
-                safe_execute(lambda: widget.configure(state='normal'))
-                safe_execute(lambda: widget.configure(fg_color=("white", "#343638")))
+                safe_execute(lambda w=widget: w.configure(state='normal'))
+                safe_execute(lambda w=widget: w.configure(fg_color=("white", "#343638")))
             else:
                 # Campo non rilevante - disabilita e imposta valore di default
-                safe_execute(lambda: widget.configure(state='disabled'))
-                safe_execute(lambda: widget.configure(fg_color=("#D0D0D0", "#404040")))
+                safe_execute(lambda w=widget: w.configure(state='disabled'))
+                safe_execute(lambda w=widget: w.configure(fg_color=("#D0D0D0", "#404040")))
 
                 # Imposta valore di default per campi non applicabili
                 if field_key in AssetConfig.NUMERIC_DEFAULT_FIELDS:
-                    safe_execute(lambda: self.form_vars[field_key].set("0"))
+                    safe_execute(lambda fk=field_key: self.form_vars[fk].set("0"))
                 else:
-                    safe_execute(lambda: self.form_vars[field_key].set("NA"))
+                    safe_execute(lambda fk=field_key: self.form_vars[fk].set("NA"))
         self._update_identifiers_notice()
 
     def _on_type_change(self, selected_type: str):

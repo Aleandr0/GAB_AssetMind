@@ -259,9 +259,9 @@ class AssetConfig:
     
     # Campi sempre attivi (per tutte le categorie)
     ALWAYS_ACTIVE_FIELDS = [
-        "category", "asset_name", "position", "risk_level", 
+        "category", "type", "tool", "asset_name", "position", "risk_level",
         "created_at", "created_amount", "created_unit_price", "created_total_value",
-        "updated_at", "updated_amount", "updated_unit_price", "updated_total_value", 
+        "updated_at", "updated_amount", "updated_unit_price", "updated_total_value",
         "note"
     ]
     
