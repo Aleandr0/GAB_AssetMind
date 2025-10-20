@@ -251,11 +251,13 @@ class AssetForm(BaseUIComponent):
         form_container.grid_columnconfigure(0, weight=1)
         form_container.grid_columnconfigure(1, weight=1)
         
-        # Definizione campi del form
+        # Definizione campi del form (ordine aggiornato con type e tool)
         fields = [
-            ("Categoria", "category", AssetConfig.CATEGORIES),
-            ("Asset Name", "asset_name", None),
             ("Posizione", "position", None),
+            ("Categoria", "category", AssetConfig.CATEGORIES),
+            ("Tipo Investimento", "type", []),  # Dinamico in base a category
+            ("Strumento", "tool", []),  # Dinamico in base a type
+            ("Asset Name", "asset_name", None),
             ("Risk Level (1-5)", "risk_level", AssetConfig.RISK_LEVELS),
             ("Ticker", "ticker", None),
             ("ISIN", "isin", None),
@@ -308,9 +310,11 @@ class AssetForm(BaseUIComponent):
                 width=180,
                 font=ctk.CTkFont(**UIConfig.FONTS['text'])
             )
-            # Se è la categoria, aggiungi callback
+            # Aggiungi callback per menu a cascata
             if key == "category":
                 widget.configure(command=self._on_category_change)
+            elif key == "type":
+                widget.configure(command=self._on_type_change)
         else:  # Entry per campi liberi
             widget = ctk.CTkEntry(
                 field_frame,
@@ -337,14 +341,27 @@ class AssetForm(BaseUIComponent):
         self._update_button_states()
     
     def _on_category_change(self, selected_category: str):
-        """Gestisce il cambio di categoria abilitando/disabilitando i campi appropriati"""
+        """Gestisce il cambio di categoria - aggiorna menu Type e resetta Tool"""
         if not selected_category:
             return
-        
-        # Ottieni i campi rilevanti per questa categoria
-        relevant_fields = (AssetConfig.ALWAYS_ACTIVE_FIELDS + 
+
+        # Aggiorna menu Type con i tipi disponibili per questa categoria
+        investment_types = AssetConfig.INVESTMENT_TYPES_BY_CATEGORY.get(selected_category, [])
+        if 'type' in self.form_widgets:
+            type_widget = self.form_widgets['type']
+            safe_execute(lambda: type_widget.configure(values=investment_types))
+            safe_execute(lambda: self.form_vars['type'].set(""))  # Reset valore
+
+        # Reset menu Tool (dipende da Type)
+        if 'tool' in self.form_widgets:
+            tool_widget = self.form_widgets['tool']
+            safe_execute(lambda: tool_widget.configure(values=[]))
+            safe_execute(lambda: self.form_vars['tool'].set(""))  # Reset valore
+
+        # Ottieni i campi rilevanti per questa categoria (logica esistente)
+        relevant_fields = (AssetConfig.ALWAYS_ACTIVE_FIELDS +
                           AssetConfig.CATEGORY_FIELD_MAPPING.get(selected_category, []))
-        
+
         # Abilita/disabilita i campi in base alla categoria
         for field_key, widget in self.form_widgets.items():
             if field_key in relevant_fields:
@@ -355,13 +372,25 @@ class AssetForm(BaseUIComponent):
                 # Campo non rilevante - disabilita e imposta valore di default
                 safe_execute(lambda: widget.configure(state='disabled'))
                 safe_execute(lambda: widget.configure(fg_color=("#D0D0D0", "#404040")))
-                
+
                 # Imposta valore di default per campi non applicabili
                 if field_key in AssetConfig.NUMERIC_DEFAULT_FIELDS:
                     safe_execute(lambda: self.form_vars[field_key].set("0"))
                 else:
                     safe_execute(lambda: self.form_vars[field_key].set("NA"))
         self._update_identifiers_notice()
+
+    def _on_type_change(self, selected_type: str):
+        """Gestisce il cambio di tipo investimento - aggiorna menu Tool"""
+        if not selected_type:
+            return
+
+        # Aggiorna menu Tool con gli strumenti disponibili per questo tipo
+        tools = AssetConfig.TOOLS_BY_INVESTMENT_TYPE.get(selected_type, [])
+        if 'tool' in self.form_widgets:
+            tool_widget = self.form_widgets['tool']
+            safe_execute(lambda: tool_widget.configure(values=tools))
+            safe_execute(lambda: self.form_vars['tool'].set(""))  # Reset valore
 
     def _clear_form(self):
         """Pulisce tutti i campi del form"""
@@ -588,9 +617,9 @@ class AssetForm(BaseUIComponent):
                 messagebox.showerror("Errore", "Il campo Asset Name è obbligatorio")
                 return None
             
-            # Raccolta DIRETTA - tutti i campi senza eccessiva validazione
+            # Raccolta DIRETTA - tutti i campi senza eccessiva validazione (ordine aggiornato)
             all_fields = [
-                'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
+                'position', 'category', 'type', 'tool', 'asset_name', 'risk_level', 'ticker', 'isin',
                 'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
                 'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
                 'return_percentage', 'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note'
@@ -681,11 +710,13 @@ class AssetForm(BaseUIComponent):
                 return ""
             return str(value)
         
-        # Mappa diretta asset -> form (conversione sicura senza validazioni complesse)
+        # Mappa diretta asset -> form (conversione sicura senza validazioni complesse - ordine aggiornato)
         field_values = {
-            'category': safe_str(asset.category),
-            'asset_name': safe_str(asset.asset_name),
             'position': safe_str(asset.position),
+            'category': safe_str(asset.category),
+            'type': safe_str(getattr(asset, 'type', '')),
+            'tool': safe_str(getattr(asset, 'tool', '')),
+            'asset_name': safe_str(asset.asset_name),
             'risk_level': str(asset.risk_level) if asset.risk_level and asset.risk_level != 0 else "1",
             'ticker': safe_str(asset.ticker),
             'isin': safe_str(asset.isin),
@@ -713,7 +744,23 @@ class AssetForm(BaseUIComponent):
                 except Exception as e:
                     print(f"Errore settaggio campo {field}: {e}")
                     self.form_vars[field].set("")
-        
+
+        # Popola menu a cascata in base ai valori caricati
+        category_value = field_values.get('category', '')
+        type_value = field_values.get('type', '')
+
+        if category_value and 'type' in self.form_widgets:
+            # Popola menu Type
+            investment_types = AssetConfig.INVESTMENT_TYPES_BY_CATEGORY.get(category_value, [])
+            type_widget = self.form_widgets['type']
+            safe_execute(lambda: type_widget.configure(values=investment_types))
+
+        if type_value and 'tool' in self.form_widgets:
+            # Popola menu Tool
+            tools = AssetConfig.TOOLS_BY_INVESTMENT_TYPE.get(type_value, [])
+            tool_widget = self.form_widgets['tool']
+            safe_execute(lambda: tool_widget.configure(values=tools))
+
         # Abilita tutti i campi per visualizzazione completa
         self._initialize_form()
         self._update_identifiers_notice()
