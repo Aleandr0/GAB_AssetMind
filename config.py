@@ -60,8 +60,10 @@ class FieldMapping:
     # Mappatura nomi colonne display -> database
     DISPLAY_TO_DB = {
         "ID": "id",
-        "Category": "category",
         "Position": "position",
+        "Category": "category",
+        "Investment Type": "type",
+        "Tool": "tool",
         "Asset Name": "asset_name",
         "ISIN": "isin",
         "Ticker": "ticker",
@@ -102,11 +104,15 @@ class FieldMapping:
 
 class AssetConfig:
     """Configurazione per gestione asset"""
-    
-    # Categorie supportate
+
+    # Categorie supportate (nuova struttura gerarchica)
     CATEGORIES = [
-        "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro", 
-        "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
+        "Azionari (Equity)",
+        "Obbligazionari (Fixed Income)",
+        "Materie Prime (Commodities)",
+        "Immobiliari (Real Estate)",
+        "Strumenti Alternativi (Alternatives)",
+        "Liquidità e Strumenti Monetari"
     ]
     
     # Livelli di rischio
@@ -123,6 +129,115 @@ class AssetConfig:
         "Unico",
         "Sospeso"
     ]
+
+    # Mapping gerarchico: Categoria → Tipi di Investimento
+    INVESTMENT_TYPES_BY_CATEGORY = {
+        "Azionari (Equity)": [
+            "Azionariato Globale",
+            "Azionariato Americano",
+            "Azionariato Europeo",
+            "Azionariato Paesi Sviluppati",
+            "Azionariato Paesi Emergenti",
+            "Azioni Small Cap Paesi Sviluppati",
+            "Azioni Value / Growth",
+            "Azioni ESG / Sostenibili"
+        ],
+        "Obbligazionari (Fixed Income)": [
+            "Obbligazioni Governative Europee",
+            "Obbligazioni Governative Globali",
+            "Obbligazioni Governative a Medio Termine",
+            "Obbligazioni Governative a Lungo Termine",
+            "Obbligazioni Corporate Investment Grade",
+            "Obbligazioni High Yield",
+            "Obbligazioni Green Bond"
+        ],
+        "Materie Prime (Commodities)": [
+            "Oro",
+            "Argento",
+            "Petrolio",
+            "Gas Naturale",
+            "Metalli Industriali",
+            "Materie Prime Agricole"
+        ],
+        "Immobiliari (Real Estate)": [
+            "REIT Globali",
+            "Fondi Immobiliari",
+            "Immobiliare Diretto",
+            "Crowdfunding Immobiliare",
+            "Immobiliare Logistico",
+            "Immobiliare Residenziale"
+        ],
+        "Strumenti Alternativi (Alternatives)": [
+            "Private Equity",
+            "Private Debt",
+            "Hedge Funds",
+            "Infrastrutture",
+            "Criptovalute",
+            "ETF Alternativi"
+        ],
+        "Liquidità e Strumenti Monetari": [
+            "Conto Corrente",
+            "Conto Deposito",
+            "Fondo Monetario",
+            "Pronti Contro Termine",
+            "Buoni del Tesoro",
+            "ETF Monetari"
+        ]
+    }
+
+    # Mapping gerarchico: Tipo di Investimento → Strumenti
+    TOOLS_BY_INVESTMENT_TYPE = {
+        # Azionari
+        "Azionariato Globale": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azionariato Americano": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azionariato Europeo": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azionariato Paesi Sviluppati": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azionariato Paesi Emergenti": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azioni Small Cap Paesi Sviluppati": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azioni Value / Growth": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+        "Azioni ESG / Sostenibili": ["ETF UCITS", "Fondo Azionario", "Azione Diretta", "Certificato d'investimento", "ETN/ETP su equity", "Derivati su indici o azioni"],
+
+        # Obbligazionari
+        "Obbligazioni Governative Europee": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni Governative Globali": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni Governative a Medio Termine": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni Governative a Lungo Termine": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni Corporate Investment Grade": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni High Yield": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+        "Obbligazioni Green Bond": ["ETF Obbligazionario", "Fondo Obbligazionario", "Obbligazione Diretta", "Certificato a reddito", "ETN/ETP su bond", "Derivati su tassi o credito"],
+
+        # Materie Prime
+        "Oro": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+        "Argento": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+        "Petrolio": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+        "Gas Naturale": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+        "Metalli Industriali": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+        "Materie Prime Agricole": ["ETC su commodity", "ETF commodity", "Futures su commodity", "Opzioni su commodity", "Certificati su commodity", "Azioni di produttori"],
+
+        # Immobiliari
+        "REIT Globali": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+        "Fondi Immobiliari": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+        "Immobiliare Diretto": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+        "Crowdfunding Immobiliare": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+        "Immobiliare Logistico": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+        "Immobiliare Residenziale": ["REIT (azione quotata)", "ETF Immobiliare", "Fondo Immobiliare", "Immobiliare Diretto", "Crowdfunding Immobiliare", "Certificato Immobiliare"],
+
+        # Strumenti Alternativi
+        "Private Equity": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+        "Private Debt": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+        "Hedge Funds": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+        "Infrastrutture": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+        "Criptovalute": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+        "ETF Alternativi": ["Fondo Private Equity/VC", "Fondo Private Debt", "Hedge Fund", "Fondo Infrastrutture", "Criptovalute Dirette", "ETN/ETF su cripto"],
+
+        # Liquidità
+        "Conto Corrente": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"],
+        "Conto Deposito": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"],
+        "Fondo Monetario": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"],
+        "Pronti Contro Termine": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"],
+        "Buoni del Tesoro": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"],
+        "ETF Monetari": ["Conto Corrente", "Conto Deposito", "Fondo Monetario UCITS", "Pronti Contro Termine", "Buoni del Tesoro a breve", "ETF Monetario"]
+    }
 
     # Categorie che richiedono identificativi completi per i dati di mercato
     MARKET_IDENTIFIER_CATEGORIES = {
@@ -161,9 +276,9 @@ class DatabaseConfig:
     # Nome file di default
     DEFAULT_PORTFOLIO_FILE = "portfolio_data.xlsx"
     
-    # Colonne database
+    # Colonne database (ordine aggiornato con type e tool)
     DB_COLUMNS = [
-        'id', 'category', 'asset_name', 'position', 'risk_level', 'ticker', 'isin',
+        'id', 'position', 'category', 'type', 'tool', 'asset_name', 'isin', 'ticker', 'risk_level',
         'created_at', 'created_amount', 'created_unit_price', 'created_total_value',
         'updated_at', 'updated_amount', 'updated_unit_price', 'updated_total_value',
         'accumulation_plan', 'accumulation_amount', 'income_per_year', 'rental_income', 'note',

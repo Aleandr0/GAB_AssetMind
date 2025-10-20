@@ -49,9 +49,11 @@ class Asset:
     
     Attributi:
         asset_id: ID univoco dell'asset
-        category: Categoria (ETF, Azioni, etc.)
-        asset_name: Nome dell'asset
         position: Posizione/descrizione (testo libero)
+        category: Categoria (Azionari, Obbligazionari, etc.)
+        type: Tipo di investimento (dipende dalla categoria)
+        tool: Strumento finanziario usato
+        asset_name: Nome dell'asset
         risk_level: Livello di rischio 1-5
         ticker: Codice ticker di borsa
         isin: Codice ISIN
@@ -67,9 +69,10 @@ class Asset:
         return_percentage: Rendimento percentuale annualizzato
     """
     
-    def __init__(self, asset_id: int = None, category: str = "", asset_name: str = "",
-                 position: str = "", risk_level: int = 1, ticker: str = "",
-                 isin: str = "", created_at: str = "", created_amount: float = 0.0,
+    def __init__(self, asset_id: int = None, position: str = "", category: str = "",
+                 type: str = "", tool: str = "", asset_name: str = "",
+                 risk_level: int = 1, ticker: str = "", isin: str = "",
+                 created_at: str = "", created_amount: float = 0.0,
                  created_unit_price: float = 0.0, created_total_value: float = 0.0,
                  updated_at: str = "", updated_amount: float = 0.0,
                  updated_unit_price: float = 0.0, updated_total_value: float = 0.0,
@@ -77,9 +80,11 @@ class Asset:
                  income_per_year: float = 0.0, rental_income: float = 0.0, note: str = "",
                  return_percentage: float = 0.0):
         self.id = asset_id
-        self.category = category
-        self.asset_name = asset_name
         self.position = position
+        self.category = category
+        self.type = type
+        self.tool = tool
+        self.asset_name = asset_name
         self.risk_level = risk_level
         self.ticker = ticker
         self.isin = isin
@@ -101,9 +106,11 @@ class Asset:
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
-            'category': self.category,
-            'asset_name': self.asset_name,
             'position': self.position,
+            'category': self.category,
+            'type': self.type,
+            'tool': self.tool,
+            'asset_name': self.asset_name,
             'risk_level': self.risk_level,
             'ticker': self.ticker,
             'isin': self.isin,
@@ -158,10 +165,9 @@ class PortfolioManager:
             self.logger.error(f"Errore validazione path: {e}")
             self.excel_file = excel_file  # Fallback senza validazione
 
-        self.categories = [
-            "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro",
-            "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
-        ]
+        # Usa categorie centralizzate da config
+        from config import AssetConfig
+        self.categories = AssetConfig.CATEGORIES
 
         # Sistema di cache per ridurre I/O disco
         self._data_cache = None
@@ -208,10 +214,18 @@ class PortfolioManager:
                 if col in df.columns:
                     df[col] = df[col].apply(self._clean_date_from_excel)
 
-            # Aggiungi colonna return_percentage se manca (per compatibilità con file Excel esistenti)
+            # Aggiungi colonne mancanti per compatibilità con file Excel esistenti
             if 'return_percentage' not in df.columns:
                 df['return_percentage'] = 0.0
                 self.logger.info("Colonna return_percentage aggiunta al DataFrame per compatibilità")
+
+            if 'type' not in df.columns:
+                df['type'] = ''
+                self.logger.info("Colonna type aggiunta al DataFrame per compatibilità")
+
+            if 'tool' not in df.columns:
+                df['tool'] = ''
+                self.logger.info("Colonna tool aggiunta al DataFrame per compatibilità")
 
             # Calcola i totali se mancanti
             if 'created_total_value' in df.columns:
@@ -1086,9 +1100,11 @@ class PortfolioManager:
         row = df[df['id'] == asset_id].iloc[0]
         return Asset(
             asset_id=row['id'],
-            category=row['category'],
-            asset_name=row['asset_name'],
             position=row['position'],
+            category=row['category'],
+            type=row.get('type', ''),
+            tool=row.get('tool', ''),
+            asset_name=row['asset_name'],
             risk_level=row['risk_level'],
             ticker=row['ticker'],
             isin=row['isin'],
@@ -1116,9 +1132,11 @@ class PortfolioManager:
         for _, row in filtered_df.iterrows():
             assets.append(Asset(
                 asset_id=row['id'],
-                category=row['category'],
-                asset_name=row['asset_name'],
                 position=row['position'],
+                category=row['category'],
+                type=row.get('type', ''),
+                tool=row.get('tool', ''),
+                asset_name=row['asset_name'],
                 risk_level=row['risk_level'],
                 ticker=row['ticker'],
                 isin=row['isin'],
