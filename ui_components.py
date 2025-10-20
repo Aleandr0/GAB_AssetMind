@@ -472,8 +472,8 @@ class PortfolioTable(BaseUIComponent):
         """Configura le colonne della tabella con auto-fit iniziale"""
         # Larghezze base per calcolo iniziale
         self.base_column_widths = {
-            "ID": 60, "Category": 120, "Position": 120, "Asset Name": 200,
-            "ISIN": 80, "Ticker": 80, "Risk Level": 120,
+            "ID": 60, "Position": 120, "Category": 140, "Investment Type": 180, "Tool": 150,
+            "Asset Name": 200, "ISIN": 80, "Ticker": 80, "Risk Level": 120,
             "Created At": 120, "Created Amount": 160, "Created Unit Price": 140,
             "Created Total Value": 150, "Updated At": 120, "Updated Amount": 160,
             "Updated Unit Price": 140, "Updated Total Value": 150,
@@ -482,11 +482,13 @@ class PortfolioTable(BaseUIComponent):
             "Return %": 120
         }
 
-        # Titoli colonne
+        # Titoli colonne (ordine aggiornato)
         column_headers = {
             "ID": "ID ▼",
-            "Category": "Category ▼",
             "Position": "Position ▼",
+            "Category": "Category ▼",
+            "Investment Type": "Investment Type ▼",
+            "Tool": "Tool ▼",
             "Asset Name": "Asset Name ▼",
             "ISIN": "ISIN ▼",
             "Ticker": "Ticker ▼",
@@ -931,11 +933,13 @@ class PortfolioTable(BaseUIComponent):
             # Mappa per i nomi delle colonne display -> dataframe
             from config import FieldMapping
             
-            # Titoli su una riga con mapping per filtri
+            # Titoli su una riga con mapping per filtri (ordine aggiornato)
             column_headers_base = {
                 "ID": "ID",
+                "Position": "Position",
                 "Category": "Category",
-                "Position": "Position", 
+                "Investment Type": "Investment Type",
+                "Tool": "Tool",
                 "Asset Name": "Asset Name",
                 "ISIN": "ISIN",
                 "Ticker": "Ticker",
@@ -1218,7 +1222,7 @@ class PortfolioTable(BaseUIComponent):
 
         if not ordered_columns:
             ordered_columns = [
-                "ID", "Category", "Position", "Asset Name", "ISIN", "Ticker", "Risk Level",
+                "ID", "Position", "Category", "Investment Type", "Tool", "Asset Name", "ISIN", "Ticker", "Risk Level",
                 "Created At", "Created Amount", "Created Unit Price", "Created Total Value",
                 "Updated At", "Updated Amount", "Updated Unit Price", "Updated Total Value",
                 "Accumulation Plan", "Accumulation Amount", "Income Per Year", "Rental Income",
