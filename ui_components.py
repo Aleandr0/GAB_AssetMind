@@ -1051,7 +1051,9 @@ class PortfolioTable(BaseUIComponent):
         excel_colors = {}  # {row_id: {'fg': color, 'bg': color}}
         try:
             wb = load_workbook(self.portfolio_manager.excel_file)
-            ws = wb.active
+            # IMPORTANTE: Leggi il foglio "Sheet" che contiene i dati, non wb.active!
+            # wb.active potrebbe puntare a "Dropdowns" o altri fogli
+            ws = wb['Sheet'] if 'Sheet' in wb.sheetnames else wb.active
 
             # Leggi i colori per ogni riga (skip header)
             for row_idx in range(2, ws.max_row + 1):

@@ -1607,7 +1607,8 @@ class PortfolioManager:
 
             # Apri il file Excel con openpyxl
             wb = load_workbook(self.excel_file)
-            ws = wb.active
+            # IMPORTANTE: Leggi il foglio "Sheet" che contiene i dati, non wb.active!
+            ws = wb['Sheet'] if 'Sheet' in wb.sheetnames else wb.active
 
             # Definisci il colore azzurro per il testo
             # IMPORTANTE: RGB in openpyxl richiede prefisso "00" per opacità (formato: 00RRGGBB)
