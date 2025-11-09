@@ -519,7 +519,8 @@ class PortfolioTable(BaseUIComponent):
         self.tree_style.configure(
             "Portfolio.Treeview",
             background="white",
-            foreground="black",
+            # NON impostare foreground qui - sovrascrive i tag individuali!
+            # foreground="black",  # RIMOSSO: permettere ai tag di funzionare
             fieldbackground="white",
             font=("TkDefaultFont", 9),
             rowheight=25
