@@ -1044,26 +1044,58 @@ class PortfolioTable(BaseUIComponent):
         except Exception as col_exc:
             self.logger.debug(f"Impossibile aggiornare l'ordine colonne dinamicamente: {col_exc}")
 
-        # NUOVO APPROCCIO: Identifica i record storici in base ai dati, non leggendo colori da Excel
-        # Questo è più affidabile e performante
-        historical_ids = set()
+        # Carica i colori dal file Excel
+        from openpyxl import load_workbook
+        from openpyxl.styles.colors import Color
+
+        excel_colors = {}  # {row_id: {'fg': color, 'bg': color}}
         try:
-            # Ottieni gli ID degli asset correnti
-            current_assets = self.portfolio_manager.get_current_assets_only()
-            current_ids = set(current_assets['id'].astype(int))
+            wb = load_workbook(self.portfolio_manager.excel_file)
+            ws = wb.active
 
-            # Tutti gli ID nel DataFrame corrente (filtrato)
-            all_ids = set(df['id'].astype(int))
+            # Leggi i colori per ogni riga (skip header)
+            for row_idx in range(2, ws.max_row + 1):
+                id_cell = ws.cell(row=row_idx, column=1)
+                try:
+                    row_id = int(id_cell.value)
+                except (TypeError, ValueError):
+                    continue
 
-            # Gli storici sono quelli che non sono negli asset correnti
-            historical_ids = all_ids - current_ids
+                # Leggi font color (per record storici = azzurro)
+                fg_color = None
+                if id_cell.font and id_cell.font.color:
+                    try:
+                        # Prova a leggere RGB (può essere None o lanciare eccezione se usa theme)
+                        if hasattr(id_cell.font.color, 'rgb'):
+                            rgb_val = id_cell.font.color.rgb
+                            # rgb_val può essere string RGB o None/eccezione
+                            if rgb_val and isinstance(rgb_val, str):
+                                fg_color = rgb_val
+                    except (TypeError, ValueError, AttributeError):
+                        # Colore usa theme invece di RGB, ignora
+                        pass
 
-            self.logger.info(f"Record storici identificati: {len(historical_ids)} su {len(all_ids)} totali")
-            if historical_ids:
-                sample_hist = list(historical_ids)[:5]
-                self.logger.info(f"Esempio IDs storici: {sample_hist}")
+                # Leggi background color (per alert = rosso)
+                bg_color = None
+                if id_cell.fill and id_cell.fill.patternType:
+                    if id_cell.fill.fgColor and hasattr(id_cell.fill.fgColor, 'rgb'):
+                        if id_cell.fill.fgColor.rgb and id_cell.fill.fgColor.rgb != '00000000':
+                            bg_color = id_cell.fill.fgColor.rgb
+
+                if fg_color or bg_color:
+                    excel_colors[row_id] = {'fg': fg_color, 'bg': bg_color}
+
+            wb.close()
+            self.logger.info(f"Caricati colori Excel per {len(excel_colors)} righe")
+
+            # Log dettagliato per debug
+            if excel_colors:
+                sample_ids = list(excel_colors.keys())[:5]
+                self.logger.info(f"Esempio IDs con colori: {sample_ids}")
+                for sample_id in sample_ids[:2]:
+                    self.logger.info(f"  ID {sample_id}: fg={excel_colors[sample_id]['fg']}, bg={excel_colors[sample_id]['bg']}")
         except Exception as e:
-            self.logger.error(f"Errore identificazione record storici: {e}")
+            self.logger.error(f"Errore caricamento colori da Excel: {e}")
 
         # Inserisce i dati con colorazione da Excel
         self.logger.debug(f"Iniziando inserimento {len(df)} righe nella tabella")
@@ -1077,20 +1109,36 @@ class PortfolioTable(BaseUIComponent):
 
                 item_id = self.portfolio_tree.insert("", "end", values=values)
 
-                # Applica colore azzurro ai record storici
+                # Applica colori da Excel
                 try:
                     row_id = int(row['id'])
-                    if row_id in historical_ids:
-                        # Questo è un record storico - applicagli il colore azzurro
-                        tag_name = f"historical_{row_id}"
+                    if row_id in excel_colors:
+                        tag_name = f"row_{row_id}"
+                        colors = excel_colors[row_id]
 
-                        # Configura tag con colore azzurro
-                        self.portfolio_tree.tag_configure(tag_name, foreground="#0066CC")
-                        self.portfolio_tree.item(item_id, tags=(tag_name,))
+                        # Converti colori RGB da Excel a formato #RRGGBB
+                        fg_hex = None
+                        bg_hex = None
 
-                        # Log per debug (solo prime 3 righe storiche)
-                        if rows_inserted < 3 or (rows_inserted < 10 and row_id in list(historical_ids)[:3]):
-                            self.logger.info(f"Tag HISTORICAL applicato a ID {row_id} (azzurro #0066CC)")
+                        if colors['fg'] and len(colors['fg']) >= 6:
+                            fg_hex = f"#{colors['fg'][-6:]}"  # Ultimi 6 char = RRGGBB
+                        if colors['bg'] and len(colors['bg']) >= 6:
+                            bg_hex = f"#{colors['bg'][-6:]}"
+
+                        # Configura tag dinamico per questa riga
+                        tag_config = {}
+                        if fg_hex:
+                            tag_config['foreground'] = fg_hex
+                        if bg_hex:
+                            tag_config['background'] = bg_hex
+
+                        if tag_config:
+                            self.portfolio_tree.tag_configure(tag_name, **tag_config)
+                            self.portfolio_tree.item(item_id, tags=(tag_name,))
+
+                            # Log per debug (solo prime 3 righe)
+                            if rows_inserted < 3:
+                                self.logger.info(f"Tag applicato a ID {row_id}: {tag_config}")
 
                 except (TypeError, ValueError, KeyError) as e:
                     self.logger.debug(f"Eccezione applicando colore a riga {rows_inserted}: {e}")
