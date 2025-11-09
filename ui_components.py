@@ -1087,6 +1087,13 @@ class PortfolioTable(BaseUIComponent):
 
             wb.close()
             self.logger.info(f"Caricati colori Excel per {len(excel_colors)} righe")
+
+            # Log dettagliato per debug
+            if excel_colors:
+                sample_ids = list(excel_colors.keys())[:5]
+                self.logger.info(f"Esempio IDs con colori: {sample_ids}")
+                for sample_id in sample_ids[:2]:
+                    self.logger.info(f"  ID {sample_id}: fg={excel_colors[sample_id]['fg']}, bg={excel_colors[sample_id]['bg']}")
         except Exception as e:
             self.logger.error(f"Errore caricamento colori da Excel: {e}")
 
@@ -1129,7 +1136,12 @@ class PortfolioTable(BaseUIComponent):
                             self.portfolio_tree.tag_configure(tag_name, **tag_config)
                             self.portfolio_tree.item(item_id, tags=(tag_name,))
 
-                except (TypeError, ValueError, KeyError):
+                            # Log per debug (solo prime 3 righe)
+                            if rows_inserted < 3:
+                                self.logger.info(f"Tag applicato a ID {row_id}: {tag_config}")
+
+                except (TypeError, ValueError, KeyError) as e:
+                    self.logger.debug(f"Eccezione applicando colore a riga {rows_inserted}: {e}")
                     pass
 
                 rows_inserted += 1
