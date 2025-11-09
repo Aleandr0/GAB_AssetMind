@@ -1063,8 +1063,16 @@ class PortfolioTable(BaseUIComponent):
                 # Leggi font color (per record storici = azzurro)
                 fg_color = None
                 if id_cell.font and id_cell.font.color:
-                    if hasattr(id_cell.font.color, 'rgb') and id_cell.font.color.rgb:
-                        fg_color = id_cell.font.color.rgb
+                    try:
+                        # Prova a leggere RGB (può essere None o lanciare eccezione se usa theme)
+                        if hasattr(id_cell.font.color, 'rgb'):
+                            rgb_val = id_cell.font.color.rgb
+                            # rgb_val può essere string RGB o None/eccezione
+                            if rgb_val and isinstance(rgb_val, str):
+                                fg_color = rgb_val
+                    except (TypeError, ValueError, AttributeError):
+                        # Colore usa theme invece di RGB, ignora
+                        pass
 
                 # Leggi background color (per alert = rosso)
                 bg_color = None

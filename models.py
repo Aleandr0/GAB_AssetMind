@@ -1584,7 +1584,7 @@ class PortfolioManager:
         """
         try:
             from openpyxl import load_workbook
-            from openpyxl.styles import Font
+            from openpyxl.styles import Font, Color
         except ImportError:
             self.logger.error("openpyxl non disponibile. Installa con: pip install openpyxl")
             return
@@ -1610,7 +1610,8 @@ class PortfolioManager:
             ws = wb.active
 
             # Definisci il colore azzurro per il testo
-            blue_font = Font(color="0066CC")  # Azzurro
+            # IMPORTANTE: RGB in openpyxl richiede prefisso "00" per opacità (formato: 00RRGGBB)
+            blue_font = Font(color=Color(rgb="000066CC"))  # Azzurro
 
             # Itera sulle righe (skip header row 1)
             for row_idx in range(2, ws.max_row + 1):
