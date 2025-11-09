@@ -105,8 +105,12 @@ class AssetConfig:
     
     # Categorie supportate
     CATEGORIES = [
-        "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro", 
-        "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
+        "Strumenti Alternativi (Alternatives)",
+        "Azionari (Equity)",
+        "Obbligazionari (Fixed Income)",
+        "Liquidità",
+        "Immobiliare",
+        "Oggetti"
     ]
     
     # Livelli di rischio
@@ -126,17 +130,16 @@ class AssetConfig:
 
     # Categorie che richiedono identificativi completi per i dati di mercato
     MARKET_IDENTIFIER_CATEGORIES = {
-        "ETF", "Azioni", "Fondi di investimento", "PAC", "Criptovalute"
+        "Strumenti Alternativi (Alternatives)",
+        "Azionari (Equity)",
+        "Obbligazionari (Fixed Income)"
     }
 
     # Mappatura campi rilevanti per categoria
     CATEGORY_FIELD_MAPPING = {
-        "ETF": ["ticker", "isin", "income_per_year"],
-        "Azioni": ["ticker", "isin", "income_per_year"], 
-        "Fondi di investimento": ["ticker", "isin", "income_per_year"],
-        "Buoni del Tesoro": ["isin", "income_per_year"],
-        "PAC": ["ticker", "isin", "accumulation_plan", "accumulation_amount", "income_per_year"],
-        "Criptovalute": ["ticker"],
+        "Strumenti Alternativi (Alternatives)": ["ticker", "isin", "income_per_year"],
+        "Azionari (Equity)": ["ticker", "isin", "income_per_year"],
+        "Obbligazionari (Fixed Income)": ["ticker", "isin", "income_per_year"],
         "Liquidità": ["income_per_year"],
         "Immobiliare": ["rental_income"],
         "Oggetti": []

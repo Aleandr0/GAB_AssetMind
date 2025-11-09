@@ -75,8 +75,14 @@ def analyze_portfolio(filepath='portfolio_data.xlsx'):
     print(f"\n{category_counts}\n")
 
     # Categorie non standard
-    standard_categories = ['ETF', 'Azioni', 'Fondi di investimento', 'Buoni del Tesoro',
-                          'PAC', 'Criptovalute', 'Liquidità', 'Immobiliare', 'Oggetti']
+    standard_categories = [
+        'Strumenti Alternativi (Alternatives)',
+        'Azionari (Equity)',
+        'Obbligazionari (Fixed Income)',
+        'Liquidità',
+        'Immobiliare',
+        'Oggetti'
+    ]
     non_standard = set(df['category'].dropna().unique()) - set(standard_categories)
     if non_standard:
         print(f"⚠️  CATEGORIE NON STANDARD: {non_standard}")

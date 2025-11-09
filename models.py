@@ -43,13 +43,13 @@ def apply_global_filters(df: pd.DataFrame, column_filters: Optional[Dict[str, Se
 class Asset:
     """
     Rappresenta un singolo asset del portfolio
-    
-    Supporta tutti i tipi di asset: ETF, Azioni, Fondi di investimento, Buoni del Tesoro,
-    PAC, Criptovalute, Liquidità, Immobiliare, Oggetti
-    
+
+    Supporta tutti i tipi di asset: Strumenti Alternativi (Alternatives), Azionari (Equity),
+    Obbligazionari (Fixed Income), Liquidità, Immobiliare, Oggetti
+
     Attributi:
         asset_id: ID univoco dell'asset
-        category: Categoria (ETF, Azioni, etc.)
+        category: Categoria (Azionari, Obbligazionari, etc.)
         asset_name: Nome dell'asset
         position: Posizione/descrizione (testo libero)
         risk_level: Livello di rischio 1-5
@@ -159,8 +159,12 @@ class PortfolioManager:
             self.excel_file = excel_file  # Fallback senza validazione
 
         self.categories = [
-            "ETF", "Azioni", "Fondi di investimento", "Buoni del Tesoro",
-            "PAC", "Criptovalute", "Liquidità", "Immobiliare", "Oggetti"
+            "Strumenti Alternativi (Alternatives)",
+            "Azionari (Equity)",
+            "Obbligazionari (Fixed Income)",
+            "Liquidità",
+            "Immobiliare",
+            "Oggetti"
         ]
 
         # Sistema di cache per ridurre I/O disco
