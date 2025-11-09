@@ -1048,12 +1048,19 @@ class PortfolioTable(BaseUIComponent):
         from openpyxl import load_workbook
         from openpyxl.styles.colors import Color
 
+        self.logger.info("=" * 80)
+        self.logger.info("INIZIO CARICAMENTO COLORI DA EXCEL")
+        self.logger.info(f"File Excel: {self.portfolio_manager.excel_file}")
+
         excel_colors = {}  # {row_id: {'fg': color, 'bg': color}}
         try:
             wb = load_workbook(self.portfolio_manager.excel_file)
+            self.logger.info(f"Fogli disponibili: {wb.sheetnames}")
+
             # IMPORTANTE: Leggi il foglio "Sheet" che contiene i dati, non wb.active!
             # wb.active potrebbe puntare a "Dropdowns" o altri fogli
             ws = wb['Sheet'] if 'Sheet' in wb.sheetnames else wb.active
+            self.logger.info(f"Foglio selezionato: {ws.title}, Righe: {ws.max_row}")
 
             # Leggi i colori per ogni riga (skip header)
             for row_idx in range(2, ws.max_row + 1):
