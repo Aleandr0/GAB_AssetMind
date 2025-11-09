@@ -433,11 +433,9 @@ class PortfolioManager:
             return summary
 
         market_update_categories = {
-            'Criptovalute',
-            'ETF',
-            'Fondi di investimento',
-            'Azioni',
-            'Titoli di stato',
+            'Strumenti Alternativi (Alternatives)',
+            'Azionari (Equity)',
+            'Obbligazionari (Fixed Income)',
         }
         if not current_df.empty and 'category' in current_df.columns:
             current_df = current_df[current_df['category'].isin(market_update_categories)]
